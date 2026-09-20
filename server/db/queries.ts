@@ -1,4 +1,4 @@
-import { db } from "./index";
+import { db, isDatabaseConfigured } from "./index";
 import {
   clients,
   collectionJobs,
