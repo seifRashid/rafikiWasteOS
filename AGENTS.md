@@ -136,7 +136,7 @@ my-app/
 │   │   ├── finance/                     # Invoices, Expenses & Projects
 │   │   ├── impact/                      # Environmental Diversion & Reports
 │   │   └── settings/                    # Multi-country config, tax, users
-│   ├── desing-system/                   # Interactive Design System Explorer
+│   ├── design-system/                   # Interactive Design System Explorer
 │   ├── api/                             # Route Handlers (Webhooks, PWA sync ONLY)
 │   ├── globals.css                      # Design tokens, variables, Tailwind v4
 │   ├── layout.tsx                       # Root layout (fonts, providers)
