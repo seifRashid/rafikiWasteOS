@@ -1,26 +1,96 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Brand Triad (70% / 15% / 15%) */
+  --brand-primary: #00993F;
+  --brand-primary-hover: #008235;
+  --brand-primary-active: #00682B;
+  --brand-primary-subtle: #EDF9F1;
+  --brand-primary-border: #ADE4C1;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --brand-yellow: #FECA36;
+  --brand-yellow-hover: #E5B01E;
+  --brand-yellow-subtle: #FFF8D6;
+  --brand-yellow-text: #785608;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --brand-cyan: #08A6BA;
+  --brand-cyan-hover: #068A9B;
+  --brand-cyan-subtle: #EEFBFD;
+  --brand-cyan-text: #056E7C;
+
+  /* Surfaces & Neutrals */
+  --canvas: #F6F8F7;
+  --surface-card: #FFFFFF;
+  --surface-subtle: #F0F4F2;
+  --surface-hover: #E8EFEA;
+  --border-subtle: #E3E9E5;
+  --border-medium: #CDD8D1;
+
+  /* Typography */
+  --text-primary: #111827;
+  --text-secondary: #4B5563;
+  --text-muted: #9CA3AF;
+  --text-inverse: #FFFFFF;
+
+  /* Shadows */
+  --shadow-card: 0 2px 14px -2px rgba(16, 38, 24, 0.05), 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+  --shadow-card-hover: 0 10px 28px -4px rgba(16, 38, 24, 0.09), 0 2px 8px 0 rgba(0, 0, 0, 0.03);
+  --shadow-nav-active: 0 4px 14px 0 rgba(0, 153, 63, 0.32);
+  --shadow-pill: 0 1px 3px 0 rgba(0, 153, 63, 0.12);
+  --shadow-modal: 0 20px 40px -8px rgba(15, 23, 42, 0.18);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--canvas);
+  color: var(--text-primary);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom rounded corner utility standards */
+.rounded-card {
+  border-radius: 20px;
+}
+
+.rounded-nested {
+  border-radius: 14px;
+}
+
+.rounded-pill {
+  border-radius: 9999px;
+}
+
+/* Custom Elevation Shadows */
+.shadow-card-elevated {
+  box-shadow: var(--shadow-card);
+}
+
+.shadow-card-hoverable {
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shadow-card-hoverable:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.shadow-active-glow {
+  box-shadow: var(--shadow-nav-active);
+}
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F4F2;
+}
+::-webkit-scrollbar-thumb {
+  background: #CDD8D1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00993F;
 }
