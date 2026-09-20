@@ -16,8 +16,8 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rafiki WasteOS — Design System & ERP Dashboard",
-  description: "Enterprise UI/UX Design System and Telematics Dashboard for Waste Logistics",
+  title: "Rafiki WasteOS — Waste & Circular Economy Management Platform",
+  description: "Enterprise Circular Economy ERP & Field Operations for Waste Haulers, Recyclers, and Environmental Organisations",
 };
 
 export default function RootLayout({
@@ -26,8 +26,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" className={`${jakarta.variable} ${mono.variable} h-full antialiased`}>
-      <body className="min-h-full font-sans bg-[#F6F8F7] text-[#111827] flex flex-col">
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${jakarta.variable} ${mono.variable} h-full antialiased`}
+    >
+      <body
+        suppressHydrationWarning
+        className="min-h-full font-sans bg-[#F6F8F7] text-[#111827] flex flex-col"
+      >
         {children}
       </body>
     </html>
