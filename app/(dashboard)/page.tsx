@@ -449,7 +449,7 @@ export default async function DashboardPage() {
                 href="/impact"
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-nested bg-[#EDF9F1] text-[#00682B] text-xs font-bold border border-[#ADE4C1] hover:bg-[#D3F3DE] transition-all"
               >
-                <span>View Monthly Sustainability Audit </span>
+                <span>View Monthly Sustainability Audit</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
