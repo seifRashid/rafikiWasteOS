@@ -14,22 +14,44 @@ import {
   ChevronDown,
   Globe,
   Sliders,
+  Menu,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useMobileNav } from "./mobile-nav-context";
 
 export function Header() {
+  const { toggleMobileNav } = useMobileNav();
   const [showNotifications, setShowNotifications] = useState(false);
   const [currency, setCurrency] = useState<"KES" | "USD">("KES");
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E3E9E5] px-6 py-3 flex items-center justify-between">
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E3E9E5] px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2 md:gap-4">
+      {/* Mobile Hamburger & Logo */}
+      <div className="flex items-center gap-2 md:hidden shrink-0">
+        <button
+          onClick={toggleMobileNav}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-slate-700 hover:bg-[#F0F4F2] active:bg-[#E3E9E5] transition-colors"
+          aria-label="Open navigation menu"
+        >
+          <Menu className="w-5 h-5 text-slate-800" />
+        </button>
+        <Link href="/" className="flex items-center gap-1.5">
+          <div className="w-8 h-8 rounded-xl bg-[#00993F] text-white flex items-center justify-center font-black text-sm shadow-xs">
+            R
+          </div>
+          <span className="font-extrabold text-slate-900 tracking-tight text-sm hidden xs:inline">
+            Rafiki
+          </span>
+        </Link>
+      </div>
+
       {/* Search Bar */}
-      <div className="flex items-center gap-3 flex-1 max-w-md">
+      <div className="flex items-center gap-3 flex-1 max-w-xs md:max-w-md">
         <div className="relative w-full">
           <Search className="w-4 h-4 text-[#9CA3AF] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search clients, jobs, trucks, batches... (⌘K)"
+            placeholder="Search... (⌘K)"
             className="w-full pl-9 pr-4 py-2 text-xs bg-[#F6F8F7] border border-[#E3E9E5] rounded-full text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#00993F] focus:ring-1 focus:ring-[#00993F] transition-all"
           />
         </div>
