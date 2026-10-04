@@ -51,6 +51,7 @@ export function MobileDrawer() {
         { name: "Routes", href: "/operations/routes" },
         { name: "Collection Schedule", href: "/operations/schedule" },
         { name: "Map", href: "/operations/map" },
+        { name: "Driver Portal", href: "/driver" },
       ],
     },
     {
@@ -257,24 +258,6 @@ export function MobileDrawer() {
               >
                 Live
               </span>
-            </Link>
-
-            {/* Field Mode Link */}
-            <Link
-              href="/field"
-              onClick={closeMobileNav}
-              className={cn(
-                "flex items-center justify-between px-3 py-2.5 rounded-nested text-xs font-bold transition-all border min-h-[44px]",
-                pathname === "/field"
-                  ? "bg-[#08A6BA] text-white border-[#08A6BA] shadow-sm"
-                  : "bg-[#EEFBFD] text-[#056E7C] border-[#B6EEF5] hover:bg-[#D5F6FA]"
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4" />
-                <span>Driver Field Mode</span>
-              </div>
-              <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
 

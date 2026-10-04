@@ -67,6 +67,7 @@ export function Sidebar({ className }: { className?: string }) {
         { name: "Routes", href: "/operations/routes" },
         { name: "Collection Schedule", href: "/operations/schedule" },
         { name: "Map", href: "/operations/map" },
+        { name: "Driver Portal", href: "/driver" },
       ],
     },
     {
@@ -205,23 +206,6 @@ export function Sidebar({ className }: { className?: string }) {
           >
             Live
           </span>
-        </Link>
-
-        {/* Dedicated Driver Field View Shortcut */}
-        <Link
-          href="/field"
-          className={cn(
-            "flex items-center justify-between px-3 py-2 rounded-nested text-xs font-bold transition-all border",
-            pathname === "/field"
-              ? "bg-[#08A6BA] text-white border-[#08A6BA] shadow-sm"
-              : "bg-[#EEFBFD] text-[#056E7C] border-[#B6EEF5] hover:bg-[#D5F6FA]"
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Driver Field Mode</span>
-          </div>
-          <ChevronRight className="w-3.5 h-3.5" />
         </Link>
 
         {/* 7 Operational Groups */}

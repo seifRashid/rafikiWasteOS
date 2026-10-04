@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   CheckSquare,
-  Smartphone,
+  MapPin,
   Users,
   Menu,
 } from "lucide-react";
@@ -20,7 +20,7 @@ export function MobileNav() {
   const links = [
     { name: "Command", href: "/", icon: LayoutDashboard },
     { name: "Jobs", href: "/operations/jobs", icon: CheckSquare },
-    { name: "Field Mode", href: "/field", icon: Smartphone, highlight: true },
+    { name: "Routes", href: "/operations/routes", icon: MapPin, highlight: true },
     { name: "Clients", href: "/customers/clients", icon: Users },
   ];
 
@@ -46,22 +46,22 @@ export function MobileNav() {
         );
       })}
 
-      {/* Center Highlighted Field Mode */}
+      {/* Center Highlighted Routes & Dispatch Mode */}
       {(() => {
-        const fieldLink = links[2];
-        const isActive = pathname === fieldLink.href || pathname.startsWith(fieldLink.href);
-        const Icon = fieldLink.icon;
+        const routeLink = links[2];
+        const isActive = pathname.startsWith(routeLink.href);
+        const Icon = routeLink.icon;
 
         return (
           <Link
-            href={fieldLink.href}
+            href={routeLink.href}
             className={cn(
               "flex flex-col items-center justify-center -mt-5 w-12 h-12 rounded-full shadow-lg transition-transform",
               isActive
                 ? "bg-[#08A6BA] text-white scale-110"
                 : "bg-[#00993F] text-white hover:scale-105 active:scale-95"
             )}
-            title="Driver Field Mode"
+            title="Routes & Live Dispatch"
           >
             <Icon className="w-5 h-5" />
           </Link>

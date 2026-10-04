@@ -71,6 +71,7 @@ export async function rescheduleMissedStopAction(jobId: string, newDateIso: stri
     revalidatePath("/collections");
     revalidatePath("/routes");
     revalidatePath("/field");
+    revalidatePath("/driver");
     revalidatePath("/");
 
     return { success: true };

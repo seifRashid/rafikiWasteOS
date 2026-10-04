@@ -85,15 +85,6 @@ export function Header() {
 
       {/* Right Actions */}
       <div className="flex items-center gap-3">
-        {/* Mobile Field Mode Quick Switch */}
-        <Link
-          href="/field"
-          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08A6BA] text-white text-xs font-semibold shadow-sm hover:bg-[#068A9B] transition-all"
-        >
-          <Smartphone className="w-3.5 h-3.5" />
-          <span>Driver View</span>
-        </Link>
-
         {/* Notification Bell with Dropdown */}
         <div className="relative">
           <button

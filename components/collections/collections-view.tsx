@@ -194,10 +194,10 @@ export function CollectionsView({ initialJobs }: CollectionsViewProps) {
 
         <div className="flex items-center gap-2">
           <Link
-            href="/field"
+            href="/driver"
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-nested bg-[#EEFBFD] text-[#056E7C] border border-[#B6EEF5] text-xs font-bold hover:bg-[#D5F6FA] transition-all"
           >
-            <span>Switch to Driver Field View</span>
+            <span>Open Driver & Crew Portal</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Link>
         </div>

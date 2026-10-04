@@ -118,6 +118,7 @@ export async function updateJobStatusAction(rawInput: unknown) {
     revalidatePath("/collections");
     revalidatePath("/routes");
     revalidatePath("/field");
+    revalidatePath("/driver");
     revalidatePath("/");
 
     return { success: true };
@@ -149,6 +150,7 @@ export async function reportMissedJobAction(rawInput: unknown) {
     revalidatePath("/collections");
     revalidatePath("/routes");
     revalidatePath("/field");
+    revalidatePath("/driver");
     revalidatePath("/");
 
     return { success: true };
