@@ -17,24 +17,30 @@ export const systemRoleEnum = pgEnum("system_role", [
   "fleet_supervisor",
   "driver_collector",
   "esg_auditor",
+  "client_admin",
+  "client_user",
   "custom",
+  "unassigned",
 ]);
 
 export const userStatusEnum = pgEnum("user_status", [
   "active",
   "invited",
+  "pending_approval",
   "suspended",
   "inactive",
 ]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
+  authUserId: text("auth_user_id"),
+  clientId: uuid("client_id"), // Correlates client users with clients table (defined as nullable for staff)
   fullName: varchar("full_name", { length: 128 }).notNull(),
   email: varchar("email", { length: 255 }).unique().notNull(),
   phone: varchar("phone", { length: 32 }).notNull(),
-  role: systemRoleEnum("role").default("driver_collector").notNull(),
-  roleTitle: varchar("role_title", { length: 64 }).notNull(),
-  status: userStatusEnum("status").default("active").notNull(),
+  role: systemRoleEnum("role").default("unassigned").notNull(),
+  roleTitle: varchar("role_title", { length: 64 }).default("Pending Role Assignment").notNull(),
+  status: userStatusEnum("status").default("pending_approval").notNull(),
   avatarUrl: text("avatar_url"),
   depotLocation: varchar("depot_location", { length: 128 }).default("Central Transfer Station"),
   assignedVehiclePlate: varchar("assigned_vehicle_plate", { length: 32 }),

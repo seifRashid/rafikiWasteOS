@@ -1050,7 +1050,7 @@ export const fallbackRoles: SystemRole[] = [
   },
 ];
 
-export const fallbackUsers: (SystemUser & { loginDetails: { username: string; authProvider: string; activeSessions: number; lastDevice: string; ipAddress: string } })[] = [
+export const fallbackUsers: (Omit<SystemUser, "authUserId" | "clientId"> & { authUserId?: string | null; clientId?: string | null; loginDetails: { username: string; authProvider: string; activeSessions: number; lastDevice: string; ipAddress: string } })[] = [
   {
     id: "usr-01",
     fullName: "David Omondi",

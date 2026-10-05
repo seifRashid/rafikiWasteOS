@@ -23,6 +23,11 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatCurrency, formatWeight, formatDate, formatDateTime } from "@/lib/utils";
 
+import { ProvisionPortalModal } from "@/components/clients/provision-portal-modal";
+import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
+import { eq, and } from "drizzle-orm";
+
 interface ClientPageProps {
   params: Promise<{ id: string }>;
 }
@@ -31,7 +36,13 @@ export const dynamic = "force-dynamic";
 
 export default async function ClientDetailPage({ params }: ClientPageProps) {
   const { id } = await params;
-  const profile = await getClientProfile(id);
+  const [profile, clientUsers] = await Promise.all([
+    getClientProfile(id),
+    db
+      .select()
+      .from(users)
+      .where(and(eq(users.clientId, id), eq(users.isDeleted, false))),
+  ]);
 
   if (!profile) {
     notFound();
@@ -63,7 +74,15 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ProvisionPortalModal
+            clientId={client.id}
+            clientName={client.name}
+            defaultContactPerson={client.contactPerson}
+            defaultEmail={client.email}
+            defaultPhone={client.phone}
+          />
+
           <Link
             href="/impact"
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-nested bg-[#EDF9F1] text-[#00682B] text-xs font-bold border border-[#ADE4C1] hover:bg-[#D3F3DE] transition-all"
@@ -156,6 +175,48 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
                 </span>
               </div>
             </div>
+          </div>
+
+          {/* Client Portal Logins Card */}
+          <div className="bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-elevated text-xs space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#F0F4F2]">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#00993F]" />
+                Client Portal Logins ({clientUsers.length})
+              </h3>
+            </div>
+
+            {clientUsers.length > 0 ? (
+              <div className="space-y-2">
+                {clientUsers.map((u) => (
+                  <div
+                    key={u.id}
+                    className="p-2.5 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5] flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="font-bold text-slate-900 block">{u.fullName}</span>
+                      <span className="text-[11px] text-[#4B5563]">{u.email}</span>
+                    </div>
+                    <Badge variant={u.role === "client_admin" ? "primary" : "neutral"} className="text-[10px]">
+                      {u.role === "client_admin" ? "Admin" : "User"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-3 text-[#9CA3AF]">
+                <p>No active portal accounts for this client.</p>
+                <div className="mt-2">
+                  <ProvisionPortalModal
+                    clientId={client.id}
+                    clientName={client.name}
+                    defaultContactPerson={client.contactPerson}
+                    defaultEmail={client.email}
+                    defaultPhone={client.phone}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

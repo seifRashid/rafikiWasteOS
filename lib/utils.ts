@@ -13,7 +13,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatCurrency(
   amount: number | string | null | undefined,
-  currency: "KES" | "USD" = "KES",
+  currency: string = "KES",
   compact: boolean = false
 ): string {
   if (amount === null || amount === undefined || isNaN(Number(amount))) {

@@ -18,9 +18,12 @@ import {
   X,
   Search,
   CheckSquare,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMobileNav } from "./mobile-nav-context";
+import { useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth/client";
 
 interface NavSubItem {
   name: string;
@@ -36,9 +39,20 @@ interface NavSection {
   items: NavSubItem[];
 }
 
-export function MobileDrawer() {
+interface MobileDrawerProps {
+  currentUser?: {
+    fullName: string;
+    roleTitle: string;
+    role: string;
+    email: string;
+    avatarUrl?: string | null;
+  };
+}
+
+export function MobileDrawer({ currentUser }: MobileDrawerProps) {
   const { isOpen, closeMobileNav } = useMobileNav();
   const pathname = usePathname();
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
 
   const navSections: NavSection[] = [
@@ -362,24 +376,42 @@ export function MobileDrawer() {
 
         {/* Footer / User Profile */}
         <div className="p-3 border-t border-[#E3E9E5] shrink-0 bg-[#F6F8F7]">
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-nested bg-white border border-[#E3E9E5]">
-            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-[#ADE4C1]">
-              <Image
-                src="/avatar_camille.jpg"
-                alt="User"
-                width={32}
-                height={32}
-                className="object-cover"
-              />
-            </div>
-            <div className="overflow-hidden flex-1">
-              <div className="text-xs font-bold text-slate-900 truncate">
-                Camille Laurent
+          <div className="flex items-center justify-between gap-2.5 px-3 py-2 rounded-nested bg-white border border-[#E3E9E5]">
+            <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+              <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-[#ADE4C1] bg-[#EDF9F1] flex items-center justify-center text-xs font-bold text-[#00993F]">
+                {currentUser?.avatarUrl ? (
+                  <Image
+                    src={currentUser.avatarUrl}
+                    alt="User"
+                    width={32}
+                    height={32}
+                    className="object-cover"
+                  />
+                ) : (
+                  <span>{(currentUser?.fullName || "Staff").charAt(0).toUpperCase()}</span>
+                )}
               </div>
-              <div className="text-[10px] text-[#00993F] font-semibold truncate">
-                Operations Director
+              <div className="overflow-hidden flex-1 min-w-0">
+                <div className="text-xs font-bold text-slate-900 truncate">
+                  {currentUser?.fullName || "Staff Member"}
+                </div>
+                <div className="text-[10px] text-[#00993F] font-semibold truncate">
+                  {currentUser?.roleTitle || "Active User"}
+                </div>
               </div>
             </div>
+
+            <button
+              onClick={async () => {
+                await authClient.signOut();
+                closeMobileNav();
+                router.push("/login");
+              }}
+              title="Sign Out"
+              className="p-1.5 rounded-md text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEE2E2] transition-colors cursor-pointer shrink-0"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </aside>

@@ -27,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import type { SystemUser, SystemRole } from "@/server/db/schema";
+import { approveUserAction } from "@/server/actions/auth";
 
 interface UserWithLogin extends SystemUser {
   loginDetails: {
@@ -53,6 +54,14 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
   const [simulatedUser, setSimulatedUser] = useState<UserWithLogin | null>(null);
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
 
+  // User Approval State
+  const [approvingUser, setApprovingUser] = useState<UserWithLogin | null>(null);
+  const [approvalRole, setApprovalRole] = useState("driver_collector");
+  const [approvalRoleTitle, setApprovalRoleTitle] = useState("Driver & Crew Leader");
+  const [approvalDepot, setApprovalDepot] = useState("Central Transfer Station");
+  const [approvalVehiclePlate, setApprovalVehiclePlate] = useState("");
+  const [approvalLoading, setApprovalLoading] = useState(false);
+
   // Form State
   const [formData, setFormData] = useState({
     fullName: "",
@@ -65,6 +74,54 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
     tempPassword: "RafikiPass2026!" + Math.floor(100 + Math.random() * 900),
     require2FA: true,
   });
+
+  const handleExecuteApproval = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!approvingUser) return;
+    setApprovalLoading(true);
+
+    try {
+      const res = await approveUserAction({
+        userId: approvingUser.id,
+        role: approvalRole as any,
+        roleTitle: approvalRoleTitle,
+        depotLocation: approvalDepot,
+        assignedVehiclePlate: approvalVehiclePlate || undefined,
+      });
+
+      if (!res.success) {
+        alert(res.error || "Failed to approve user.");
+        setApprovalLoading(false);
+        return;
+      }
+
+      setUserList((prev) =>
+        prev.map((u) =>
+          u.id === approvingUser.id
+            ? {
+                ...u,
+                status: "active",
+                role: approvalRole as any,
+                roleTitle: approvalRoleTitle,
+                depotLocation: approvalDepot,
+                assignedVehiclePlate: approvalVehiclePlate || null,
+              }
+            : u
+        )
+      );
+
+      setActionSuccessMessage(
+        `Staff account for ${approvingUser.fullName} approved and activated with role "${approvalRoleTitle}".`
+      );
+      setTimeout(() => setActionSuccessMessage(null), 5000);
+      setApprovingUser(null);
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred during approval.");
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
 
   const filteredUsers = userList.filter((u) => {
     const matchesSearch =
@@ -80,6 +137,7 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
   });
 
   const totalUsers = userList.length;
+  const pendingApprovalsCount = userList.filter((u) => u.status === "pending_approval").length;
   const activeSessionsToday = userList.filter((u) => u.loginDetails.activeSessions > 0).length;
   const twoFactorCount = userList.filter((u) => u.twoFactorEnabled).length;
   const driverLogins = userList.filter((u) => u.role === "driver_collector").length;
@@ -116,6 +174,8 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
 
     const newUser: UserWithLogin = {
       id: "usr-" + Date.now().toString().slice(-4),
+      authUserId: null,
+      clientId: null,
       fullName: formData.fullName,
       email: formData.email,
       phone: formData.phone || "+254 700 000 000",
@@ -195,6 +255,32 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
         </div>
       )}
 
+      {/* Pending Approvals Urgent Banner */}
+      {pendingApprovalsCount > 0 && (
+        <div className="p-4 rounded-card bg-[#FFF8D6] border border-[#FECA36] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#FECA36] text-[#785608] flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+              {pendingApprovalsCount}
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm text-[#785608] flex items-center gap-2">
+                <span>Pending Staff Registrations</span>
+                <span className="w-2 h-2 rounded-full bg-[#FECA36] animate-ping" />
+              </h4>
+              <p className="text-xs text-[#785608]/90 font-medium">
+                {pendingApprovalsCount} staff member(s) registered as normal users awaiting administrator role assignment and account activation.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setStatusFilter("pending_approval")}
+            className="px-3.5 py-1.5 rounded-full bg-[#785608] hover:bg-[#5E4306] text-white text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer"
+          >
+            Review Pending ({pendingApprovalsCount})
+          </button>
+        </div>
+      )}
+
       {/* Top Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -256,6 +342,9 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
             className="text-xs sm:text-sm bg-muted/40 border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="all">All Status</option>
+            {pendingApprovalsCount > 0 && (
+              <option value="pending_approval">Pending Approval ({pendingApprovalsCount})</option>
+            )}
             <option value="active">Active Only</option>
             <option value="suspended">Suspended Only</option>
           </select>
@@ -405,39 +494,62 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
 
                     {/* Status */}
                     <td className="px-4 py-4">
-                      <button
-                        onClick={() => handleToggleStatus(u.id)}
-                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold transition-colors ${
-                          u.status === "active"
-                            ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                            : "bg-rose-100 text-rose-800 hover:bg-rose-200"
-                        }`}
-                        title="Click to toggle status"
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${u.status === "active" ? "bg-emerald-600" : "bg-rose-600"}`} />
-                        {u.status === "active" ? "Active" : "Suspended"}
-                      </button>
+                      {u.status === "pending_approval" ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-[#FFF8D6] text-[#785608] border border-[#FECA36] whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full mr-1.5 bg-[#FECA36] animate-pulse" />
+                          Pending Approval
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleStatus(u.id)}
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold transition-colors ${
+                            u.status === "active"
+                              ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                              : "bg-rose-100 text-rose-800 hover:bg-rose-200"
+                          }`}
+                          title="Click to toggle status"
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${u.status === "active" ? "bg-emerald-600" : "bg-rose-600"}`} />
+                          {u.status === "active" ? "Active" : "Suspended"}
+                        </button>
+                      )}
                     </td>
 
                     {/* Actions */}
                     <td className="px-5 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      {u.status === "pending_approval" ? (
                         <button
-                          onClick={() => handleResetPassword(u)}
-                          className="p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                          title="Generate Temporary Password"
+                          onClick={() => {
+                            setApprovingUser(u);
+                            setApprovalRole("driver_collector");
+                            setApprovalRoleTitle("Driver & Crew Leader");
+                            setApprovalDepot(u.depotLocation || "Central Transfer Station");
+                            setApprovalVehiclePlate(u.assignedVehiclePlate || "");
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#00993F] hover:bg-[#008235] active:bg-[#00682B] text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer whitespace-nowrap"
                         >
-                          <KeyRound className="w-4 h-4" />
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Approve &amp; Assign Role
                         </button>
-                        <button
-                          onClick={() => setSimulatedUser(u)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-muted hover:bg-primary hover:text-white rounded-lg text-xs font-semibold text-foreground transition-all"
-                          title="Simulate Login As This User"
-                        >
-                          <LogIn className="w-3.5 h-3.5" />
-                          Login As
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleResetPassword(u)}
+                            className="p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            title="Generate Temporary Password"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setSimulatedUser(u)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-muted hover:bg-primary hover:text-white rounded-lg text-xs font-semibold text-foreground transition-all"
+                            title="Simulate Login As This User"
+                          >
+                            <LogIn className="w-3.5 h-3.5" />
+                            Login As
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -626,6 +738,138 @@ export function UsersView({ initialUsers, roles }: UsersViewProps) {
                   className="px-5 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 shadow-xs"
                 >
                   Provision Login Account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Approve & Assign Role Modal */}
+      {approvingUser && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-card shadow-modal border border-border w-full max-w-lg p-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-[#EDF9F1] text-[#00993F] flex items-center justify-center font-bold">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-foreground">Approve Staff Member</h3>
+                  <p className="text-xs text-muted-foreground">Assign operational role and activate access</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setApprovingUser(null)}
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteApproval} className="space-y-4 pt-4">
+              <div className="p-3 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5] text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-muted-foreground">Staff Name:</span>
+                  <span className="font-bold text-foreground">{approvingUser.fullName}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-muted-foreground">Email:</span>
+                  <span className="font-mono text-foreground">{approvingUser.email}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-muted-foreground">Phone:</span>
+                  <span className="text-foreground">{approvingUser.phone}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-foreground uppercase mb-1">
+                  Assign Operational Role *
+                </label>
+                <select
+                  value={approvalRole}
+                  onChange={(e) => {
+                    const nextRole = e.target.value;
+                    setApprovalRole(nextRole);
+                    const matched = roles.find((r) => r.slug === nextRole);
+                    if (matched) {
+                      setApprovalRoleTitle(matched.name);
+                    }
+                  }}
+                  className="w-full text-sm px-3 py-2 border border-border rounded-lg bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary font-medium"
+                >
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.slug}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-foreground uppercase mb-1">
+                  Role Title Display Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={approvalRoleTitle}
+                  onChange={(e) => setApprovalRoleTitle(e.target.value)}
+                  className="w-full text-sm px-3 py-2 border border-border rounded-lg bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="e.g. Lead Compactor Driver"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-foreground uppercase mb-1">
+                    Assigned Depot / Hub *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={approvalDepot}
+                    onChange={(e) => setApprovalDepot(e.target.value)}
+                    className="w-full text-sm px-3 py-2 border border-border rounded-lg bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-foreground uppercase mb-1">
+                    Truck Plate (If Driver)
+                  </label>
+                  <input
+                    type="text"
+                    value={approvalVehiclePlate}
+                    onChange={(e) => setApprovalVehiclePlate(e.target.value)}
+                    placeholder="e.g. KDD 482B"
+                    className="w-full text-sm px-3 py-2 border border-border rounded-lg bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setApprovingUser(null)}
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={approvalLoading}
+                  className="px-5 py-2 bg-[#00993F] hover:bg-[#008235] text-white text-sm font-bold rounded-lg shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {approvalLoading ? (
+                    <span>Activating Account...</span>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Approve &amp; Activate Staff</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

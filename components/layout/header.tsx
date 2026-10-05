@@ -15,13 +15,30 @@ import {
   Globe,
   Sliders,
   Menu,
+  LogOut,
+  User,
+  Shield,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useMobileNav } from "./mobile-nav-context";
+import { useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth/client";
 
-export function Header() {
+interface HeaderProps {
+  currentUser?: {
+    fullName: string;
+    roleTitle: string;
+    role: string;
+    email: string;
+    avatarUrl?: string | null;
+  };
+}
+
+export function Header({ currentUser }: HeaderProps) {
   const { toggleMobileNav } = useMobileNav();
+  const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [currency, setCurrency] = useState<"KES" | "USD">("KES");
 
   return (
@@ -142,15 +159,67 @@ export function Header() {
           )}
         </div>
 
-        {/* User Avatar */}
-        <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-[#00993F] shrink-0 shadow-xs">
-          <Image
-            src="/avatar_camille.jpg"
-            alt="Profile"
-            width={32}
-            height={32}
-            className="object-cover"
-          />
+        {/* User Profile Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            className="flex items-center gap-2 p-1 rounded-full hover:bg-[#F0F4F2] transition-colors cursor-pointer"
+            aria-label="User menu"
+          >
+            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-[#00993F] shrink-0 shadow-xs bg-[#EDF9F1] flex items-center justify-center text-xs font-bold text-[#00993F]">
+              {currentUser?.avatarUrl ? (
+                <Image
+                  src={currentUser.avatarUrl}
+                  alt="Profile"
+                  width={32}
+                  height={32}
+                  className="object-cover"
+                />
+              ) : (
+                <span>{(currentUser?.fullName || "Staff").charAt(0).toUpperCase()}</span>
+              )}
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-[#9CA3AF] hidden sm:block" />
+          </button>
+
+          {showUserMenu && (
+            <div className="absolute right-0 mt-2 w-64 bg-white rounded-card shadow-modal border border-[#E3E9E5] p-3 z-50 animate-in fade-in slide-in-from-top-2">
+              <div className="pb-3 border-b border-[#E3E9E5]">
+                <p className="text-xs font-bold text-[#111827] truncate">
+                  {currentUser?.fullName || "Active Staff"}
+                </p>
+                <p className="text-[11px] text-[#9CA3AF] font-mono truncate">
+                  {currentUser?.email || "staff@rafikiwaste.co.ke"}
+                </p>
+                <div className="mt-1.5 inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#EDF9F1] text-[#00993F] border border-[#ADE4C1]">
+                  {currentUser?.roleTitle || "Active User"}
+                </div>
+              </div>
+
+              <div className="pt-2 space-y-1">
+                <Link
+                  href="/settings/users"
+                  onClick={() => setShowUserMenu(false)}
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-[10px] text-xs font-semibold text-[#4B5563] hover:bg-[#F0F4F2] hover:text-[#111827] transition-colors"
+                >
+                  <User className="w-3.5 h-3.5 text-[#00993F]" />
+                  <span>My Profile &amp; Logins</span>
+                </Link>
+
+                <button
+                  onClick={async () => {
+                    setShowUserMenu(false);
+                    await authClient.signOut();
+                    router.push("/login");
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[10px] text-xs font-semibold text-[#DC2626] hover:bg-[#FEE2E2] transition-colors cursor-pointer text-left"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>
