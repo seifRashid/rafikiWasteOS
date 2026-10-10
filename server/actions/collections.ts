@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { db } from "@/server/db";
-import { collectionJobs, jobStatusEnum, missedReasonEnum } from "@/server/db/schema";
+import { collectionJobs, jobStatusEnum, missedReasonEnum, vehicles } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -192,5 +192,105 @@ export async function createJobAction(rawInput: {
   } catch (error) {
     console.error("[ACTION_ERROR: createJobAction]", error);
     return { success: false, error: "Failed to create collection job." };
+  }
+}
+
+// 5. Assign Truck, Driver, and Route to a Collection Job
+const AssignJobTruckSchema = z.object({
+  jobId: z.string().min(1, "Invalid job identifier"),
+  vehicleId: z
+    .string()
+    .transform((val) => (val && val.trim() !== "" ? val : null))
+    .optional()
+    .nullable(),
+  driverName: z.string().min(2, "Driver name is required"),
+  routeId: z
+    .string()
+    .transform((val) => (val && val.trim() !== "" ? val : null))
+    .optional()
+    .nullable(),
+  dispatchNotes: z.string().optional(),
+});
+
+const isUuid = (str: string | null | undefined): boolean => {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+};
+
+export async function assignJobTruckAction(rawInput: unknown) {
+  try {
+    const parsed = AssignJobTruckSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: "Validation failed. Please select a valid truck and driver.",
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      };
+    }
+
+    const { jobId, vehicleId, driverName, routeId, dispatchNotes } = parsed.data;
+
+    // Fetch existing job
+    const [existingJob] = await db
+      .select()
+      .from(collectionJobs)
+      .where(eq(collectionJobs.id, jobId))
+      .limit(1);
+
+    if (!existingJob) {
+      return { success: false, error: "Collection job not found." };
+    }
+
+    let targetVehicleId: string | null = null;
+    if (vehicleId && isUuid(vehicleId)) {
+      targetVehicleId = vehicleId;
+    } else {
+      const [firstVeh] = await db.select({ id: vehicles.id }).from(vehicles).limit(1);
+      if (firstVeh) targetVehicleId = firstVeh.id;
+    }
+
+    let targetRouteId: string | null = null;
+    if (routeId && isUuid(routeId)) {
+      targetRouteId = routeId;
+    }
+
+    let appendedNotes = existingJob.notes || "";
+    if (dispatchNotes?.trim()) {
+      appendedNotes = `${appendedNotes} [DISPATCH NOTE: ${dispatchNotes.trim()}]`.trim();
+    }
+
+    await db
+      .update(collectionJobs)
+      .set({
+        vehicleId: targetVehicleId,
+        driverName: driverName.trim(),
+        routeId: targetRouteId,
+        status: "assigned",
+        notes: appendedNotes,
+        updatedAt: new Date(),
+      })
+      .where(eq(collectionJobs.id, jobId));
+
+    // Revalidate operations and customer portals
+    revalidatePath("/operations/schedule");
+    revalidatePath("/operations/jobs");
+    revalidatePath("/operations/routes");
+    revalidatePath("/collections");
+    revalidatePath("/portal");
+    revalidatePath("/portal/schedule");
+    revalidatePath("/portal/collections");
+    revalidatePath("/");
+
+    return {
+      success: true,
+      data: {
+        jobId,
+        status: "assigned",
+        driverName,
+      },
+    };
+  } catch (error) {
+    console.error("[ACTION_ERROR: assignJobTruckAction]", error);
+    return { success: false, error: "Failed to assign vehicle and driver to collection job." };
   }
 }

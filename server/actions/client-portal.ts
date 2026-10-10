@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { db } from "@/server/db";
-import { clients, users } from "@/server/db/schema";
+import { clients, users, collectionJobs } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth/server";
@@ -180,3 +180,100 @@ export async function provisionClientUserAction(
     return { success: false, error: "Failed to provision client portal user." };
   }
 }
+
+// 3. Client booking an on-demand / extra collection run
+const RequestExtraPickupSchema = z.object({
+  pickupDate: z.string().min(10, "Pickup date is required"), // YYYY-MM-DD
+  timeSlot: z.enum(["morning", "midday", "afternoon"]).default("morning"),
+  wasteStream: z.enum(["organic", "recyclable", "residual", "hazardous", "electronic"]),
+  expectedQuantityKg: z.number().positive("Estimated weight must be greater than 0").default(250),
+  notes: z.string().optional(),
+});
+
+export async function requestExtraPickupAction(
+  rawInput: unknown
+): Promise<ActionResponse<{ jobNumber: string; scheduledAt: string }>> {
+  try {
+    const currentUser = await getCurrentUser();
+    if (!currentUser || !currentUser.isClient || !currentUser.clientId) {
+      // Allow super_admin testing as well
+      if (!currentUser?.isAdmin && !currentUser?.clientId) {
+        return { success: false, error: "Unauthorized: Active client credentials required." };
+      }
+    }
+
+    let activeClientId = currentUser?.clientId;
+    if (!activeClientId && currentUser?.isAdmin) {
+      const [firstClient] = await db
+        .select()
+        .from(clients)
+        .where(eq(clients.isDeleted, false))
+        .limit(1);
+      activeClientId = firstClient?.id;
+    }
+
+    if (!activeClientId) {
+      return { success: false, error: "No client organization associated with account." };
+    }
+
+    const parsed = RequestExtraPickupSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: "Validation failed. Please verify requested date and stream.",
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      };
+    }
+
+    const { pickupDate, timeSlot, wasteStream, expectedQuantityKg, notes } = parsed.data;
+
+    // Build scheduled date and time
+    let timeStr = "08:00:00";
+    if (timeSlot === "midday") timeStr = "12:30:00";
+    if (timeSlot === "afternoon") timeStr = "15:30:00";
+
+    const scheduledDateObj = new Date(`${pickupDate}T${timeStr}`);
+    if (isNaN(scheduledDateObj.getTime())) {
+      return { success: false, error: "Invalid date format specified." };
+    }
+
+    // Generate unique job number
+    const randSeq = Math.floor(1000 + Math.random() * 9000);
+    const jobNumber = `JOB-REQ-${randSeq}`;
+
+    const [newJob] = await db
+      .insert(collectionJobs)
+      .values({
+        jobNumber,
+        clientId: activeClientId,
+        wasteStream,
+        expectedQuantityKg: expectedQuantityKg.toFixed(2),
+        scheduledAt: scheduledDateObj,
+        status: "scheduled",
+        binCondition: "Normal",
+        notes: notes ? `[On-Demand Request] ${notes.trim()}` : "[On-Demand Client Request]",
+      })
+      .returning();
+
+    // Revalidate customer & operational dashboards
+    revalidatePath("/portal");
+    revalidatePath("/portal/schedule");
+    revalidatePath("/portal/collections");
+    revalidatePath("/operations/schedule");
+    revalidatePath("/operations/jobs");
+    revalidatePath("/operations/routes");
+    revalidatePath("/customers/requests");
+
+    return {
+      success: true,
+      data: {
+        jobNumber: newJob.jobNumber,
+        scheduledAt: newJob.scheduledAt.toISOString(),
+      },
+    };
+  } catch (error) {
+    console.error("[requestExtraPickupAction Error]:", error);
+    return { success: false, error: "Failed to schedule collection request. Please try again." };
+  }
+}
+

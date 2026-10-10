@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
+import { BookPickupModal } from "@/components/portal/book-pickup-modal";
 import { formatWeight, formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -75,26 +76,35 @@ export default async function ClientPortalDashboardPage() {
           </p>
         </div>
 
-        {/* Quick Service Status Pill */}
-        <div className="bg-[#F0F4F2] p-3.5 rounded-card border border-[#E3E9E5] flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full bg-[#00993F] text-white flex items-center justify-center shrink-0">
-            <Truck className="w-5 h-5" />
-          </div>
-          <div className="text-xs">
-            <span className="text-[#9CA3AF] block font-medium">Next Scheduled Pickup</span>
-            {nextPickup ? (
-              <span className="font-bold text-slate-900 block mt-0.5">
-                {formatDateTime(nextPickup.scheduledAt)}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Quick Service Status Pill */}
+          <div className="bg-[#F0F4F2] p-3.5 rounded-card border border-[#E3E9E5] flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-[#00993F] text-white flex items-center justify-center shrink-0">
+              <Truck className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <span className="text-[#9CA3AF] block font-medium">Next Scheduled Pickup</span>
+              {nextPickup ? (
+                <span className="font-bold text-slate-900 block mt-0.5">
+                  {formatDateTime(nextPickup.scheduledAt)}
+                </span>
+              ) : (
+                <span className="font-bold text-slate-900 block mt-0.5">
+                  {client.collectionFrequency.replace("_", " ")} routine
+                </span>
+              )}
+              <span className="text-[11px] text-[#00993F] font-semibold">
+                Streams: {client.wasteStreams}
               </span>
-            ) : (
-              <span className="font-bold text-slate-900 block mt-0.5">
-                {client.collectionFrequency.replace("_", " ")} routine
-              </span>
-            )}
-            <span className="text-[11px] text-[#00993F] font-semibold">
-              Streams: {client.wasteStreams}
-            </span>
+            </div>
           </div>
+
+          <BookPickupModal
+            clientName={client.name}
+            defaultStreams={client.wasteStreams}
+            buttonLabel="+ Request Pickup"
+            variant="primary"
+          />
         </div>
       </div>
 

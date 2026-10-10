@@ -17,6 +17,7 @@ import {
   Camera,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { BookPickupModal } from "@/components/portal/book-pickup-modal";
 import { formatWeight, formatDate, formatDateTime } from "@/lib/utils";
 
 interface PageProps {
@@ -34,13 +35,24 @@ export default async function ClientCollectionsPage({ searchParams }: PageProps)
   if (!user) return null;
 
   let activeClientId = user.clientId;
+  let activeClientName = user.fullName || "Client Organization";
   if (!activeClientId && (user.isAdmin || user.role === "operations_manager")) {
     const [firstClient] = await db
       .select()
       .from(clients)
       .where(eq(clients.isDeleted, false))
       .limit(1);
-    if (firstClient) activeClientId = firstClient.id;
+    if (firstClient) {
+      activeClientId = firstClient.id;
+      activeClientName = firstClient.name;
+    }
+  } else if (activeClientId) {
+    const [clientRecord] = await db
+      .select({ name: clients.name })
+      .from(clients)
+      .where(eq(clients.id, activeClientId))
+      .limit(1);
+    if (clientRecord) activeClientName = clientRecord.name;
   }
 
   if (!activeClientId) return null;
@@ -86,10 +98,15 @@ export default async function ClientCollectionsPage({ searchParams }: PageProps)
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <span className="font-mono text-xs font-bold bg-[#EDF9F1] text-[#00682B] px-3 py-1.5 rounded-nested border border-[#ADE4C1]">
             {jobs.length} Records Found
           </span>
+          <BookPickupModal
+            clientName={activeClientName}
+            buttonLabel="+ Request Pickup"
+            variant="primary"
+          />
         </div>
       </div>
 

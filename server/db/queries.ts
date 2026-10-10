@@ -11,6 +11,7 @@ import {
   projects,
   users,
   roles,
+  dispatchSettings,
   type Client,
   type CollectionJob,
   type Route,
@@ -22,6 +23,7 @@ import {
   type Project,
   type SystemUser,
   type SystemRole,
+  type DispatchSetting,
 } from "./schema";
 import { eq, desc, and } from "drizzle-orm";
 
@@ -726,6 +728,46 @@ export async function getInventorySummary() {
       deletedAt: null,
     },
   ];
+}
+
+export async function getDispatchSettings(): Promise<DispatchSetting> {
+  try {
+    const [settings] = await db.select().from(dispatchSettings).limit(1);
+    if (settings) return settings;
+  } catch (error) {
+    console.warn("[DB_QUERY_FALLBACK: getDispatchSettings]", error);
+  }
+
+  return {
+    id: "default-dispatch-settings",
+    maxStopsPerRoute: 6,
+    autoSplitExceededRoutes: true,
+    defaultStartDepot: "Central Logistics Depot - Industrial Area",
+    defaultEndDestination: "Mombasa Road MRF & Weighbridge",
+    operatingDays: "Monday,Tuesday,Wednesday,Thursday,Friday,Saturday",
+    updatedBy: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
+export async function getAllRouteStops() {
+  try {
+    const stops = await db
+      .select({
+        job: collectionJobs,
+        client: clients,
+      })
+      .from(collectionJobs)
+      .leftJoin(clients, eq(collectionJobs.clientId, clients.id))
+      .where(and(eq(collectionJobs.isDeleted, false)))
+      .orderBy(collectionJobs.stopSequence);
+
+    return stops;
+  } catch (error) {
+    console.warn("[DB_QUERY_FALLBACK: getAllRouteStops]", error);
+    return [];
+  }
 }
 
 export async function getFleetAndAssets() {

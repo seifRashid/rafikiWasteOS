@@ -17,9 +17,12 @@ import {
   HardDrive,
   ShieldCheck,
   Zap,
+  Truck,
+  Sliders,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
+import { updateDispatchSettingsAction } from "@/server/actions/routes";
 
 export function SystemSettingsView() {
   const [saved, setSaved] = useState(false);
@@ -39,10 +42,20 @@ export function SystemSettingsView() {
     weighbridgeToleranceKg: 5,
     smsGateway: "Africa's Talking (Kenya +254)",
     mpesaEnvironment: "production_daraja",
+    maxStopsPerRoute: 6,
+    autoSplitExceededRoutes: true,
   });
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      await updateDispatchSettingsAction({
+        maxStopsPerRoute: settings.maxStopsPerRoute,
+        autoSplitExceededRoutes: settings.autoSplitExceededRoutes,
+      });
+    } catch (err) {
+      console.warn("Could not sync dispatch settings:", err);
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 4000);
   };
@@ -206,6 +219,50 @@ export function SystemSettingsView() {
                   className="rounded border-border text-primary focus:ring-primary w-4 h-4"
                 />
                 <span>Allow GPS Photo Uploads on Mobile Data (2G/3G/4G)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Route Dispatch & Capacity Rules */}
+        <div className="bg-white p-6 rounded-2xl border border-border shadow-xs space-y-5">
+          <div className="flex items-center gap-3 border-b border-border/60 pb-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+              <Truck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-foreground">Route Dispatch & Maximum Capacity Rules</h2>
+              <p className="text-xs text-muted-foreground">Thresholds for pickup points per route loop and automatic multi-route generation</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-foreground uppercase mb-1">
+                Maximum Pickup Points / Stops per Route
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={settings.maxStopsPerRoute}
+                  onChange={(e) => setSettings({ ...settings, maxStopsPerRoute: Number(e.target.value) || 1 })}
+                  className="w-28 text-sm font-bold font-mono px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+                <span className="text-xs text-muted-foreground">Stops per truck manifest</span>
+              </div>
+            </div>
+
+            <div className="flex items-center pt-5">
+              <label className="flex items-center gap-2.5 text-xs font-bold text-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.autoSplitExceededRoutes}
+                  onChange={(e) => setSettings({ ...settings, autoSplitExceededRoutes: e.target.checked })}
+                  className="rounded border-border text-primary focus:ring-primary w-4 h-4"
+                />
+                <span>Auto-Create Overflow Route (Route 2, Route 3) when points exceed maximum</span>
               </label>
             </div>
           </div>

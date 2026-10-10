@@ -17,6 +17,7 @@ import {
   Layers,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { BookPickupModal } from "@/components/portal/book-pickup-modal";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -59,10 +60,15 @@ export default async function ClientSchedulePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Badge variant="primary" className="text-xs capitalize">
             {client.collectionFrequency.replace("_", " ")} Schedule
           </Badge>
+          <BookPickupModal
+            clientName={client.name}
+            defaultStreams={client.wasteStreams}
+            buttonLabel="+ Book Extra Pickup"
+          />
         </div>
       </div>
 
@@ -128,20 +134,29 @@ export default async function ClientSchedulePage() {
           </div>
         </div>
 
-        {/* Card 3: Ad-Hoc Request */}
-        <div className="bg-[#EDF9F1] rounded-card p-5 border border-[#ADE4C1] space-y-3 text-xs">
-          <h3 className="text-sm font-bold text-[#00682B] flex items-center gap-2">
-            <Truck className="w-4 h-4" />
-            Extra / Emergency Run?
-          </h3>
-          <p className="text-[#4B5563] text-[11px] leading-relaxed">
-            Hosting an event, banquet, or seasonal clean-up generating overflow waste? Contact our
-            dispatch team for an additional unscheduled pickup.
-          </p>
+        {/* Card 3: Interactive On-Demand Request */}
+        <div className="bg-[#EDF9F1] rounded-card p-5 border border-[#ADE4C1] space-y-3 text-xs flex flex-col justify-between">
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-[#00682B] flex items-center gap-2">
+              <Truck className="w-4 h-4" />
+              Need an Extra or Emergency Run?
+            </h3>
+            <p className="text-[#4B5563] text-[11px] leading-relaxed">
+              Hosting an event, banquet, or seasonal clean-up generating overflow waste? Book an
+              unscheduled pickup directly into our dispatch queue.
+            </p>
+          </div>
 
-          <div className="pt-2 border-t border-[#ADE4C1]/60 space-y-1 font-semibold text-slate-800 text-[11px]">
-            <div>📞 Direct: +254 700 800 900</div>
-            <div>✉️ dispatch@rafikiwaste.co.ke</div>
+          <div className="pt-2 border-t border-[#ADE4C1]/60 space-y-2">
+            <BookPickupModal
+              clientName={client.name}
+              defaultStreams={client.wasteStreams}
+              buttonLabel="Book On-Demand Pickup Now"
+              variant="secondary"
+            />
+            <div className="text-[10px] text-[#00682B] font-semibold flex items-center gap-1.5">
+              <span>📞 Dispatch Support: +254 700 800 900</span>
+            </div>
           </div>
         </div>
       </div>

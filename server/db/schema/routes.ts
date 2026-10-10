@@ -45,3 +45,18 @@ export const routes = pgTable("routes", {
 
 export type Route = typeof routes.$inferSelect;
 export type NewRoute = typeof routes.$inferInsert;
+
+export const dispatchSettings = pgTable("dispatch_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  maxStopsPerRoute: integer("max_stops_per_route").default(8).notNull(),
+  autoSplitExceededRoutes: boolean("auto_split_exceeded_routes").default(true).notNull(),
+  defaultStartDepot: text("default_start_depot").default("Central Logistics Depot").notNull(),
+  defaultEndDestination: text("default_end_destination").default("Mombasa Road MRF & Weighbridge").notNull(),
+  operatingDays: text("operating_days").default("Monday,Tuesday,Wednesday,Thursday,Friday,Saturday"),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type DispatchSetting = typeof dispatchSettings.$inferSelect;
+export type NewDispatchSetting = typeof dispatchSettings.$inferInsert;
