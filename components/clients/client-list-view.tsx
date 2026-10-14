@@ -48,6 +48,7 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
     physicalAddress: "",
     countyRegion: "Nairobi",
     collectionFrequency: "weekly",
+    collectionDays: ["Wednesday"],
     wasteStreams: "Organic, Recyclable",
     binCount: "4 x 240L Wheeled Bins",
     monthlyFee: "35000",
@@ -79,6 +80,7 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
     try {
       const res = await createClientAction({
         ...formData,
+        collectionDays: formData.collectionDays.join(", "),
         monthlyFee: parseFloat(formData.monthlyFee) || 0,
       });
 
@@ -97,6 +99,7 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
             physicalAddress: "",
             countyRegion: "Nairobi",
             collectionFrequency: "weekly",
+            collectionDays: ["Wednesday"],
             wasteStreams: "Organic, Recyclable",
             binCount: "4 x 240L Wheeled Bins",
             monthlyFee: "35000",
@@ -378,7 +381,18 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                     </label>
                     <select
                       value={formData.collectionFrequency}
-                      onChange={(e) => setFormData({ ...formData, collectionFrequency: e.target.value })}
+                      onChange={(e) => {
+                        const freq = e.target.value;
+                        let days = formData.collectionDays;
+                        if (freq === "daily") {
+                          days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                        } else if (freq === "twice_weekly") {
+                          days = ["Tuesday", "Friday"];
+                        } else if (freq === "weekly") {
+                          days = ["Wednesday"];
+                        }
+                        setFormData({ ...formData, collectionFrequency: freq, collectionDays: days });
+                      }}
                       className="w-full p-2.5 rounded-nested border border-[#E3E9E5] bg-white focus:outline-none focus:border-[#00993F]"
                     >
                       <option value="daily">Daily</option>
@@ -399,6 +413,41 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                       onChange={(e) => setFormData({ ...formData, monthlyFee: e.target.value })}
                       className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
                     />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-bold text-[#4B5563] block">
+                      Designated Collection Days *
+                    </label>
+                    <span className="text-[11px] text-[#00993F] font-bold">
+                      {formData.collectionDays.length} selected
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day) => {
+                      const isSel = formData.collectionDays.includes(day);
+                      return (
+                        <button
+                          type="button"
+                          key={day}
+                          onClick={() => {
+                            const newDays = isSel
+                              ? formData.collectionDays.filter((d) => d !== day)
+                              : [...formData.collectionDays, day];
+                            setFormData({ ...formData, collectionDays: newDays });
+                          }}
+                          className={`p-1.5 rounded-nested border text-[11px] font-bold transition-all text-center cursor-pointer ${
+                            isSel
+                              ? "bg-[#00993F] text-white border-[#00993F]"
+                              : "bg-[#F6F8F7] text-slate-700 border-[#E3E9E5] hover:bg-[#EDF9F1]"
+                          }`}
+                        >
+                          {day.slice(0, 3)}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

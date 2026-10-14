@@ -8,36 +8,35 @@ import {
   Calendar,
   Fuel,
   Navigation,
-  Clock,
   CheckCircle2,
   AlertTriangle,
-  Plus,
   RefreshCw,
-  ChevronRight,
-  ChevronLeft,
+  GripVertical,
   X,
   Check,
   Settings2,
   Sliders,
   History,
-  Layers,
-  ArrowRight,
   Search,
-  Filter,
-  Sparkles,
-  Zap,
   Info,
+  Printer,
+  UserCheck,
+  Send,
+  FileText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import {
-  createRouteAction,
   rescheduleMissedStopAction,
   updateDispatchSettingsAction,
   autoSplitAndGenerateRoutesAction,
+  syncAndGetDailyOperationsAction,
+  dispatchRouteAction,
+  updateRouteDispatchDetailsAction,
+  reorderRouteStopsAction,
 } from "@/server/actions/routes";
 import type { Route, Vehicle, DispatchSetting } from "@/server/db/schema";
-import { formatDate, formatDateTime, formatWeight } from "@/lib/utils";
+import { formatDate, formatWeight } from "@/lib/utils";
 
 interface RouteWithVehicle {
   route: Route;
@@ -65,6 +64,7 @@ interface StopItem {
     name: string;
     physicalAddress: string;
     countyRegion: string;
+    phone?: string | null;
   } | null;
 }
 
@@ -82,6 +82,7 @@ export function RoutesView({
   fleetVehicles = [],
 }: RoutesViewProps) {
   const [routesList, setRoutesList] = useState<RouteWithVehicle[]>(initialRoutes);
+  const [stopsList, setStopsList] = useState<StopItem[]>(initialStops);
   const [dispatchSettingsState, setDispatchSettingsState] = useState<DispatchSetting>(
     initialSettings || {
       id: "default",
@@ -99,12 +100,14 @@ export function RoutesView({
   // Top View Mode: "active" (Today / Daily Dispatch) vs "history" (Archive & Past Routes)
   const [activeTab, setActiveTab] = useState<"active" | "history">("active");
 
-  // Selected Date for Daily Dispatch (Defaults to today or earliest date in list)
+  // Selected Date for Daily Dispatch
   const todayStr = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [isDateSyncing, setIsDateSyncing] = useState(false);
 
-  // Filter routes belonging to the selected date
+  // Filter routes belonging to the selected date (excluding deleted surplus routes)
   const routesOnSelectedDate = routesList.filter((r) => {
+    if (r.route.isDeleted) return false;
     const rDate =
       typeof r.route.routeDate === "string"
         ? r.route.routeDate
@@ -112,34 +115,38 @@ export function RoutesView({
     return rDate === selectedDate;
   });
 
-  // If no routes on selected date, fallback to first available route or empty
-  const activeRoutesForDay =
-    routesOnSelectedDate.length > 0 ? routesOnSelectedDate : routesList.slice(0, 2);
+  const activeRoutesForDay = routesOnSelectedDate;
 
   // Selected Route ID within the day
   const [selectedRouteId, setSelectedRouteId] = useState<string>(
-    activeRoutesForDay[0]?.route.id || initialRoutes[0]?.route.id || ""
+    activeRoutesForDay[0]?.route.id || ""
   );
 
   const currentRouteItem =
-    routesList.find((r) => r.route.id === selectedRouteId) ||
+    activeRoutesForDay.find((r) => r.route.id === selectedRouteId) ||
     activeRoutesForDay[0] ||
-    routesList[0];
+    null;
 
-  // Modals
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  // Modals & Notices
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [rescheduleSuccess, setRescheduleSuccess] = useState<string | null>(null);
-  const [autoSplitNotice, setAutoSplitNotice] = useState<string | null>(null);
-  const [isAutoSplitting, setIsAutoSplitting] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isManifestModalOpen, setIsManifestModalOpen] = useState(false);
+  const [rescheduleJobTarget, setRescheduleJobTarget] = useState<{
+    id: string;
+    clientName: string;
+    jobNumber: string;
+  } | null>(null);
+  const [rescheduleDateInput, setRescheduleDateInput] = useState<string>("");
 
-  // New Route Form
-  const [routeName, setRouteName] = useState("");
-  const [driverName, setDriverName] = useState("Mohammed Bakari");
-  const [routeDate, setRouteDate] = useState(selectedDate);
-  const [selectedVehicleId, setSelectedVehicleId] = useState(
-    fleetVehicles[0]?.id || currentRouteItem?.vehicle?.id || ""
-  );
+  const [notification, setNotification] = useState<{
+    type: "success" | "error" | "info";
+    message: string;
+  } | null>(null);
+
+  const showNotification = (message: string, type: "success" | "error" | "info" = "success") => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
 
   // Capacity Settings Form State
   const [maxStopsInput, setMaxStopsInput] = useState<number>(
@@ -149,109 +156,93 @@ export function RoutesView({
     dispatchSettingsState.autoSplitExceededRoutes
   );
   const [settingsLoading, setSettingsLoading] = useState(false);
-  const [settingsSavedMessage, setSettingsSavedMessage] = useState<string | null>(null);
+
+  // Reassign Modal State
+  const [reassignDriverName, setReassignDriverName] = useState("");
+  const [reassignDriverPhone, setReassignDriverPhone] = useState("");
+  const [reassignVehicleId, setReassignVehicleId] = useState("");
+  const [reassignCrewNames, setReassignCrewNames] = useState("");
+  const [reassignLoading, setReassignLoading] = useState(false);
 
   // History Tab Filter States
   const [historySearch, setHistorySearch] = useState("");
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>("all");
   const [historyRangeFilter, setHistoryRangeFilter] = useState<"all" | "7d" | "30d">("all");
 
-  // Get real stops assigned to current route
-  const currentRouteDbStops = initialStops.filter(
-    (s) => s.job.routeId === currentRouteItem?.route.id
-  );
+  // Get real stops assigned to current route from live database stopsList
+  const currentRouteDbStops = currentRouteItem
+    ? stopsList
+        .filter((s) => s.job.routeId === currentRouteItem.route.id)
+        .sort((a, b) => (a.job.stopSequence || 0) - (b.job.stopSequence || 0))
+    : [];
 
-  // Fallback stops if this route has no database jobs explicitly linked yet
-  const fallbackStops = [
-    {
-      seq: 1,
-      name: "Safari Park Hotel & Casino",
-      time: "08:00 AM",
-      address: "Thika Road, Kasarani",
-      stream: "Organic (1,300 kg)",
-      status: "completed",
-    },
-    {
-      seq: 2,
-      name: "Brookside International School",
-      time: "09:30 AM",
-      address: "Spring Valley Rd, Westlands",
-      stream: "Recyclable (470 kg)",
-      status: "completed",
-    },
-    {
-      seq: 3,
-      name: "Java House — Kimathi Street",
-      time: "11:15 AM",
-      address: "CBD Kimathi St",
-      stream: "Organic (320 kg)",
-      status: "completed",
-    },
-    {
-      seq: 4,
-      name: "East Africa Bottlers Logistics",
-      time: "02:00 PM",
-      address: "Ruaraka Industrial Area",
-      stream: "Recyclable (Est. 2,800 kg)",
-      status: "in_progress",
-    },
-    {
-      seq: 5,
-      name: "Westlands Office Towers",
-      time: "03:30 PM",
-      address: "Mpaka Rd, Westlands",
-      stream: "Paper & E-Waste",
-      status: "pending",
-    },
-    {
-      seq: 6,
-      name: "Parklands Sports Club",
-      time: "04:45 PM",
-      address: "Ojijo Rd, Parklands",
-      stream: "Organics & Glass",
-      status: "pending",
-    },
-  ];
+  const displayStops = currentRouteDbStops.map((s, idx) => ({
+    seq: s.job.stopSequence || idx + 1,
+    name: s.client?.name || "Client Scheduled Stop",
+    time: new Date(s.job.scheduledAt).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    address: s.client?.physicalAddress || "Nairobi, Kenya",
+    phone: s.client?.phone || "+254 712 345 678",
+    stream: `${s.job.wasteStream.charAt(0).toUpperCase() + s.job.wasteStream.slice(1)} (~${formatWeight(s.job.expectedQuantityKg || "300", "kg")})`,
+    expectedKg: s.job.expectedQuantityKg || "300",
+    actualWeightKg: s.job.actualWeightKg,
+    status: s.job.status,
+    jobId: s.job.id,
+    jobNumber: s.job.jobNumber,
+  }));
 
-  const displayStops =
-    currentRouteDbStops.length > 0
-      ? currentRouteDbStops.map((s, idx) => ({
-          seq: s.job.stopSequence || idx + 1,
-          name: s.client?.name || "Client Stop",
-          time: new Date(s.job.scheduledAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          address: s.client?.physicalAddress || "Nairobi",
-          stream: `${s.job.wasteStream} (~${formatWeight(s.job.expectedQuantityKg || "300", "kg")})`,
-          status: s.job.status,
-          jobId: s.job.id,
-        }))
-      : fallbackStops.slice(0, currentRouteItem?.route.totalStops || 6);
-
-  const handleCreateRoute = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle Date Change & Server Sync
+  const handleDateChange = async (newDate: string) => {
+    setSelectedDate(newDate);
+    setIsDateSyncing(true);
     try {
-      const res = await createRouteAction({
-        name: routeName,
-        driverName,
-        routeDate,
-        vehicleId: selectedVehicleId || null,
-      });
-
-      if (res.success && res.data) {
-        const newR = res.data as Route;
-        const matchedVeh = fleetVehicles.find((v) => v.id === newR.vehicleId) || null;
-        setRoutesList([{ route: newR, vehicle: matchedVeh }, ...routesList]);
-        setSelectedRouteId(newR.id);
-        setIsCreateModalOpen(false);
-        setRouteName("");
+      const res = await syncAndGetDailyOperationsAction(newDate);
+      if (res.success) {
+        setRoutesList(res.allRoutes || res.routes || []);
+        setStopsList(res.stops || []);
+        if (res.routes && res.routes.length > 0) {
+          setSelectedRouteId(res.routes[0].route.id);
+        } else {
+          setSelectedRouteId("");
+        }
+      } else {
+        showNotification(res.error || "Failed to sync operations for date.", "error");
       }
-    } catch {
-      alert("Failed to create route manifest");
+    } catch (err: any) {
+      showNotification(err?.message || "Error syncing operations.", "error");
+    } finally {
+      setIsDateSyncing(false);
     }
   };
 
+  // Handle Manual Refresh / Auto-Balance
+  const handleRefreshOperations = async () => {
+    setIsDateSyncing(true);
+    try {
+      const res = await autoSplitAndGenerateRoutesAction(selectedDate, maxStopsInput);
+      if (res.success && "eligibleStopsCount" in res) {
+        const syncRes = await syncAndGetDailyOperationsAction(selectedDate);
+        if (syncRes.success) {
+          setRoutesList(syncRes.allRoutes || syncRes.routes || []);
+          setStopsList(syncRes.stops || []);
+          if (syncRes.routes && syncRes.routes.length > 0) {
+            setSelectedRouteId(syncRes.routes[0].route.id);
+          }
+        }
+        showNotification(
+          `Synced operations for ${selectedDate}: ${res.eligibleStopsCount} stops distributed across ${res.routesCount} routes.`
+        );
+      }
+    } catch (err: any) {
+      showNotification(err?.message || "Failed to refresh daily operations.", "error");
+    } finally {
+      setIsDateSyncing(false);
+    }
+  };
+
+  // Handle Save Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSettingsLoading(true);
@@ -269,43 +260,198 @@ export function RoutesView({
           maxStopsPerRoute: maxStopsInput,
           autoSplitExceededRoutes: autoSplitToggle,
         }));
-        setSettingsSavedMessage("Route capacity thresholds updated successfully!");
-        setTimeout(() => {
-          setSettingsSavedMessage(null);
-          setIsSettingsModalOpen(false);
-        }, 1500);
+
+        if (autoSplitToggle) {
+          await autoSplitAndGenerateRoutesAction(selectedDate, maxStopsInput);
+          const syncRes = await syncAndGetDailyOperationsAction(selectedDate);
+          if (syncRes.success) {
+            setRoutesList(syncRes.allRoutes || syncRes.routes || []);
+            setStopsList(syncRes.stops || []);
+          }
+        }
+
+        showNotification(`Capacity threshold set to ${maxStopsInput} stops. Routes re-balanced!`);
+        setIsSettingsModalOpen(false);
       }
     } catch (err: any) {
-      alert(err?.message || "Failed to save settings");
+      showNotification(err?.message || "Failed to save capacity settings.", "error");
     } finally {
       setSettingsLoading(false);
     }
   };
 
-  const handleTriggerAutoSplit = async () => {
-    setIsAutoSplitting(true);
+  // Dispatch Route Action (Planned -> In Progress -> Completed)
+  const handleDispatchRoute = async (targetStatus: "in_progress" | "completed" | "planned") => {
+    if (!currentRouteItem) return;
     try {
-      const res = await autoSplitAndGenerateRoutesAction(selectedDate);
+      const res = await dispatchRouteAction(currentRouteItem.route.id, targetStatus);
       if (res.success) {
-        setAutoSplitNotice(
-          `Capacity Balanced: Automatically split into ${res.routesCreated} routes (${res.totalStopsDistributed} stops, max ${res.maxStopsApplied} per route). Refreshing manifests...`
+        setRoutesList((prev) =>
+          prev.map((r) =>
+            r.route.id === currentRouteItem.route.id
+              ? { ...r, route: { ...r.route, status: targetStatus } }
+              : r
+          )
         );
-        setTimeout(() => {
-          window.location.reload();
-        }, 1200);
+        const syncRes = await syncAndGetDailyOperationsAction(selectedDate);
+        if (syncRes.success) {
+          setStopsList(syncRes.stops || []);
+        }
+
+        const label =
+          targetStatus === "in_progress"
+            ? "Route dispatched! Driver manifest is now live."
+            : targetStatus === "completed"
+            ? "Route marked as completed."
+            : "Route status updated.";
+        showNotification(label);
       } else {
-        alert(res.error || "Unable to auto-split routes.");
+        showNotification(res.error || "Failed to update dispatch status.", "error");
       }
     } catch (err: any) {
-      alert(err?.message || "Auto-split process failed.");
-    } finally {
-      setIsAutoSplitting(false);
+      showNotification(err?.message || "Dispatch error occurred.", "error");
     }
   };
 
-  const handleReschedule = () => {
-    setRescheduleSuccess("Stop rescheduled to tomorrow's Morning Manifest!");
-    setTimeout(() => setRescheduleSuccess(null), 3000);
+  // Reassign Driver & Vehicle Modal Open
+  const openReassignModal = () => {
+    if (!currentRouteItem) return;
+    setReassignDriverName(currentRouteItem.route.driverName || "");
+    setReassignDriverPhone(currentRouteItem.route.driverPhone || "");
+    setReassignVehicleId(currentRouteItem.route.vehicleId || "");
+    setReassignCrewNames(currentRouteItem.route.crewNames || "");
+    setIsAssignModalOpen(true);
+  };
+
+  const handleSaveReassignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentRouteItem) return;
+    setReassignLoading(true);
+    try {
+      const res = await updateRouteDispatchDetailsAction({
+        routeId: currentRouteItem.route.id,
+        vehicleId: reassignVehicleId || null,
+        driverName: reassignDriverName,
+        driverPhone: reassignDriverPhone,
+        crewNames: reassignCrewNames,
+      });
+
+      if (res.success) {
+        const syncRes = await syncAndGetDailyOperationsAction(selectedDate);
+        if (syncRes.success) {
+          setRoutesList(syncRes.allRoutes || syncRes.routes || []);
+          setStopsList(syncRes.stops || []);
+        }
+        showNotification("Route resources updated. Driver manifest synced!");
+        setIsAssignModalOpen(false);
+      } else {
+        showNotification(res.error || "Failed to update assignments.", "error");
+      }
+    } catch (err: any) {
+      showNotification(err?.message || "Failed to update assignments.", "error");
+    } finally {
+      setReassignLoading(false);
+    }
+  };
+
+  // Stop Sequencing Drag-and-Drop
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = (index: number) => {
+    if (dragOverIndex === index) {
+      setDragOverIndex(null);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex || !currentRouteItem) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const sourceIndex = draggedIndex;
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+
+    const reorderedStops = [...displayStops];
+    const [movedItem] = reorderedStops.splice(sourceIndex, 1);
+    reorderedStops.splice(targetIndex, 0, movedItem);
+
+    const orderedJobIds = reorderedStops.map((s) => s.jobId);
+
+    // Optimistically update stopsList so UI re-orders instantaneously
+    setStopsList((prev) =>
+      prev.map((stopItem) => {
+        const newPos = orderedJobIds.indexOf(stopItem.job.id);
+        if (newPos !== -1) {
+          return {
+            ...stopItem,
+            job: {
+              ...stopItem.job,
+              stopSequence: newPos + 1,
+            },
+          };
+        }
+        return stopItem;
+      })
+    );
+
+    try {
+      await reorderRouteStopsAction(currentRouteItem.route.id, orderedJobIds);
+      const syncRes = await syncAndGetDailyOperationsAction(selectedDate);
+      if (syncRes.success) {
+        setStopsList(syncRes.stops || []);
+      }
+      showNotification("Stop sequence updated via drag-and-drop.");
+    } catch (err) {
+      showNotification("Failed to update stop sequence.", "error");
+    }
+  };
+
+  // Reschedule Stop
+  const handleConfirmReschedule = async () => {
+    if (!rescheduleJobTarget || !rescheduleDateInput) return;
+    try {
+      const res = await rescheduleMissedStopAction(rescheduleJobTarget.id, rescheduleDateInput);
+      if (res.success) {
+        const syncRes = await syncAndGetDailyOperationsAction(selectedDate);
+        if (syncRes.success) {
+          setRoutesList(syncRes.allRoutes || syncRes.routes || []);
+          setStopsList(syncRes.stops || []);
+        }
+        showNotification(
+          `${rescheduleJobTarget.clientName} rescheduled to ${formatDate(rescheduleDateInput)}!`
+        );
+        setRescheduleJobTarget(null);
+        setRescheduleDateInput("");
+      } else {
+        showNotification("Failed to reschedule stop.", "error");
+      }
+    } catch (err: any) {
+      showNotification(err?.message || "Error rescheduling stop.", "error");
+    }
   };
 
   // Filter History records
@@ -355,7 +501,7 @@ export function RoutesView({
             </Badge>
           </div>
           <p className="text-xs text-[#4B5563] mt-0.5">
-            Daily collection manifests, multi-route daily partitioning, driver telemetry and route history archive.
+            Daily collection manifests, multi-route partitioning, driver telemetry and route history archive.
           </p>
         </div>
 
@@ -386,6 +532,17 @@ export function RoutesView({
             </button>
           </div>
 
+          {/* Refresh / Sync Button */}
+          <button
+            onClick={handleRefreshOperations}
+            disabled={isDateSyncing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-nested bg-white hover:bg-[#F6F8F7] text-slate-700 text-xs font-bold border border-[#E3E9E5] shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            title="Re-sync eligible client schedules and auto-balance routes for this date"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#00993F] ${isDateSyncing ? "animate-spin" : ""}`} />
+            <span>Sync Daily Stops</span>
+          </button>
+
           {/* Settings Button */}
           <button
             onClick={() => setIsSettingsModalOpen(true)}
@@ -395,30 +552,22 @@ export function RoutesView({
             <Settings2 className="w-3.5 h-3.5 text-slate-500" />
             <span>Capacity Settings</span>
           </button>
-
-          {/* Plan Route Button */}
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-nested bg-[#00993F] text-white text-xs font-bold shadow-sm hover:bg-[#008235] transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Plan Daily Route</span>
-          </button>
         </div>
       </div>
 
-      {/* Notifications */}
-      {rescheduleSuccess && (
-        <div className="p-3 rounded-nested bg-[#EDF9F1] border border-[#ADE4C1] text-xs font-bold text-[#00682B] flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4" />
-          <span>{rescheduleSuccess}</span>
-        </div>
-      )}
-
-      {autoSplitNotice && (
-        <div className="p-3.5 rounded-nested bg-[#EEFBFD] border border-[#B6EEF5] text-xs font-bold text-[#067382] flex items-center gap-2 animate-in fade-in">
-          <Sparkles className="w-4 h-4 text-[#08A6BA]" />
-          <span>{autoSplitNotice}</span>
+      {/* Dynamic Notification Toast */}
+      {notification && (
+        <div
+          className={`p-3.5 rounded-nested border text-xs font-bold flex items-center gap-2 animate-in fade-in shadow-xs ${
+            notification.type === "success"
+              ? "bg-[#EDF9F1] border-[#ADE4C1] text-[#00682B]"
+              : notification.type === "error"
+              ? "bg-red-50 border-red-200 text-red-800"
+              : "bg-[#EEFBFD] border-[#B6EEF5] text-[#067382]"
+          }`}
+        >
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{notification.message}</span>
         </div>
       )}
 
@@ -427,7 +576,7 @@ export function RoutesView({
         <div className="space-y-5">
           {/* Day Navigation & Sub-Route Bar */}
           <div className="bg-white rounded-card p-4 border border-[#E3E9E5] shadow-card-elevated space-y-4">
-            {/* Row 1: Date Bar & Quick Auto-Split Action */}
+            {/* Row 1: Date Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F0F4F2]">
               <div className="flex items-center gap-3">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
@@ -437,310 +586,446 @@ export function RoutesView({
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => {
-                    setSelectedDate(e.target.value);
-                    const matching = routesList.filter((r) => {
-                      const rd =
-                        typeof r.route.routeDate === "string"
-                          ? r.route.routeDate
-                          : new Date(r.route.routeDate).toISOString().split("T")[0];
-                      return rd === e.target.value;
-                    });
-                    if (matching[0]) setSelectedRouteId(matching[0].route.id);
-                  }}
+                  onChange={(e) => handleDateChange(e.target.value)}
                   className="px-2.5 py-1 bg-[#F6F8F7] border border-[#E3E9E5] rounded-nested text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00993F]"
                 />
                 <span className="text-xs font-bold text-[#00993F] bg-[#EDF9F1] px-2.5 py-0.5 rounded-full border border-[#ADE4C1]">
-                  {activeRoutesForDay.length} {activeRoutesForDay.length === 1 ? "Route" : "Routes"} Scheduled
+                  {activeRoutesForDay.length} {activeRoutesForDay.length === 1 ? "Route" : "Routes"} Active
                 </span>
-              </div>
-
-              {/* Auto-Split Button */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleTriggerAutoSplit}
-                  disabled={isAutoSplitting}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-nested bg-[#EEFBFD] hover:bg-[#D5F5F9] text-[#08A6BA] text-xs font-bold border border-[#B6EEF5] transition-all cursor-pointer disabled:opacity-50"
-                  title="Automatically split collection stops into multiple routes if exceeding threshold"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isAutoSplitting ? "Splitting Routes..." : "Auto-Balance & Split Routes"}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Row 2: Tabs for Multiple Routes on that Day */}
-            <div>
-              <div className="flex items-center justify-between pb-1.5">
-                <span className="text-[11px] font-bold text-[#9CA3AF] uppercase tracking-wider">
-                  Day Manifests (Select Route Loop):
-                </span>
-                {activeRoutesForDay.length > 1 && (
-                  <span className="text-[11px] font-bold text-[#08A6BA]">
-                    ⚡ Multiple routes active today based on client volume
+                {isDateSyncing && (
+                  <span className="text-xs font-semibold text-[#08A6BA] flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>Synchronizing schedule...</span>
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-none">
-                {activeRoutesForDay.map(({ route, vehicle }, idx) => {
-                  const isSelected = route.id === currentRouteItem?.route.id;
-                  const stopsCount = route.totalStops || 6;
-                  const isFull = stopsCount >= maxStopsLimit;
-
-                  return (
-                    <button
-                      key={route.id}
-                      onClick={() => setSelectedRouteId(route.id)}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-nested text-xs font-semibold whitespace-nowrap transition-all border cursor-pointer ${
-                        isSelected
-                          ? "bg-[#00993F] text-white border-[#00993F] shadow-sm ring-2 ring-[#00993F]/20"
-                          : "bg-[#F6F8F7] text-slate-700 border-[#E3E9E5] hover:bg-[#EDF9F1] hover:border-[#ADE4C1]"
-                      }`}
-                    >
-                      <div
-                        className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${
-                          isSelected ? "bg-white text-[#00993F]" : "bg-white text-slate-700 shadow-2xs"
-                        }`}
-                      >
-                        {idx + 1}
-                      </div>
-
-                      <div className="text-left">
-                        <div className="font-extrabold flex items-center gap-1.5">
-                          <span>{route.name}</span>
-                          {isFull && (
-                            <span
-                              className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                                isSelected
-                                  ? "bg-amber-400 text-slate-900"
-                                  : "bg-amber-100 text-amber-900 border border-amber-300"
-                              }`}
-                            >
-                              Max Cap
-                            </span>
-                          )}
-                        </div>
-                        <div className={`text-[10px] ${isSelected ? "text-white/80" : "text-[#9CA3AF]"}`}>
-                          {route.routeCode} • {vehicle?.plateNumber || "Truck"} ({route.driverName}) • {stopsCount}/{maxStopsLimit} stops
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-
-                {/* Quick Add Route Shortcut */}
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-nested bg-white text-[#00993F] text-xs font-bold border border-dashed border-[#ADE4C1] hover:bg-[#EDF9F1] transition-colors whitespace-nowrap cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Route Loop</span>
-                </button>
+              <div className="text-xs text-slate-500 flex items-center gap-2">
+                <span>Stops due today:</span>
+                <strong className="text-slate-900 font-mono">
+                  {stopsList.filter((s) => {
+                    const jd = new Date(s.job.scheduledAt).toISOString().split("T")[0];
+                    return jd === selectedDate;
+                  }).length}{" "}
+                  client collections
+                </strong>
               </div>
             </div>
-          </div>
 
-          {/* Capacity Alert Banner if Selected Route is over capacity */}
-          {isOverCapacity && (
-            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-card flex items-start gap-3 text-xs text-amber-900">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-bold">
-                  Route Exceeds Maximum Capacity Limit ({stopsOnCurrentRoute} Stops / Max {maxStopsLimit})
-                </span>
-                <p className="text-[11px] text-amber-800">
-                  This route has more pickup points than the configured threshold of {maxStopsLimit} stops.
-                  Click <strong>&ldquo;Auto-Balance & Split Routes&rdquo;</strong> to automatically spin off an overflow loop with another truck and driver.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Telemetry Stat Cards for Currently Selected Route */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              title="Stops on Route"
-              value={`${currentRouteItem?.route.completedStops || 0} / ${stopsOnCurrentRoute}`}
-              subtitle={
-                stopsOnCurrentRoute >= maxStopsLimit
-                  ? `At full capacity (${maxStopsLimit} cap)`
-                  : `${maxStopsLimit - stopsOnCurrentRoute} slots available`
-              }
-              icon={<CheckCircle2 className="w-5 h-5" />}
-              accentColor={isOverCapacity ? "amber" : "primary"}
-            />
-
-            <StatCard
-              title="Assigned Vehicle"
-              value={currentRouteItem?.vehicle?.plateNumber || "KDD 482B"}
-              subtitle={currentRouteItem?.vehicle?.model || "Isuzu 20m³ Compactor"}
-              icon={<Truck className="w-5 h-5" />}
-              accentColor="cyan"
-            />
-
-            <StatCard
-              title="Distance Logged"
-              value={`${currentRouteItem?.route.totalDistanceKm || "38.5"} km`}
-              subtitle="GPS corridor tracking"
-              icon={<Navigation className="w-5 h-5" />}
-              accentColor="neutral"
-            />
-
-            <StatCard
-              title="Fuel Consumed"
-              value={`${currentRouteItem?.route.fuelUsedLitres || "16.2"} L`}
-              subtitle="2.4 km per litre avg"
-              icon={<Fuel className="w-5 h-5" />}
-              accentColor="amber"
-            />
-          </div>
-
-          {/* Stops Sequence and Corridor Map Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left: Stops Sequence Manifest */}
-            <div className="lg:col-span-2 bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-elevated">
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#F0F4F2]">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-[#00993F]" />
-                    <span>Stop Waypoint Sequence — {currentRouteItem?.route.name}</span>
-                  </h3>
-                  <p className="text-xs text-[#4B5563]">
-                    Driver: <strong>{currentRouteItem?.route.driverName}</strong> • Phone:{" "}
-                    {currentRouteItem?.route.driverPhone || "+254 712 345 678"} • Crew:{" "}
-                    {currentRouteItem?.route.crewNames || "Peter Maina, Samuel Kipkorir"}
-                  </p>
+            {/* Row 2: Tabs for Multiple Routes on that Day */}
+            {activeRoutesForDay.length > 0 ? (
+              <div>
+                <div className="flex items-center justify-between pb-1.5">
+                  <span className="text-[11px] font-bold text-[#9CA3AF] uppercase tracking-wider">
+                    Day Manifests (Select Route Loop):
+                  </span>
+                  {activeRoutesForDay.length > 1 && (
+                    <span className="text-[11px] font-bold text-[#08A6BA]">
+                      ⚡ Route loop auto-partitioned based on {maxStopsLimit}-stop capacity threshold
+                    </span>
+                  )}
                 </div>
-                <Badge variant={currentRouteItem?.route.status === "completed" ? "neutral" : "cyan"} dot>
-                  {currentRouteItem?.route.status.replace("_", " ") || "Active"}
-                </Badge>
-              </div>
 
-              <div className="space-y-3">
-                {displayStops.map((stop) => (
-                  <div
-                    key={stop.seq}
-                    className={`p-3.5 rounded-nested border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
-                      stop.status === "completed"
-                        ? "bg-[#F6F8F7] border-[#E3E9E5]"
-                        : stop.status === "in_progress"
-                        ? "bg-[#EEFBFD] border-[#B6EEF5] shadow-xs ring-1 ring-[#08A6BA]"
-                        : "bg-white border-[#E3E9E5]"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`w-7 h-7 rounded-full font-mono text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 ${
-                          stop.status === "completed"
-                            ? "bg-[#00993F] text-white"
-                            : stop.status === "in_progress"
-                            ? "bg-[#08A6BA] text-white animate-pulse"
-                            : "bg-[#F0F4F2] text-[#4B5563]"
+                <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-none">
+                  {activeRoutesForDay.map(({ route, vehicle }, idx) => {
+                    const isSelected = route.id === currentRouteItem?.route.id;
+                    const routeActualStops = stopsList.filter((s) => s.job.routeId === route.id);
+                    const stopsCount = routeActualStops.length;
+                    const isFull = stopsCount >= maxStopsLimit;
+
+                    return (
+                      <button
+                        key={route.id}
+                        onClick={() => setSelectedRouteId(route.id)}
+                        className={`flex items-center gap-3 px-4 py-2.5 rounded-nested text-xs font-semibold whitespace-nowrap transition-all border cursor-pointer ${
+                          isSelected
+                            ? "bg-[#00993F] text-white border-[#00993F] shadow-sm ring-2 ring-[#00993F]/20"
+                            : "bg-[#F6F8F7] text-slate-700 border-[#E3E9E5] hover:bg-[#EDF9F1] hover:border-[#ADE4C1]"
                         }`}
                       >
-                        {stop.seq}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900 text-xs">{stop.name}</span>
-                          <span className="text-[11px] font-mono text-[#9CA3AF]">{stop.time}</span>
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${
+                            isSelected ? "bg-white text-[#00993F]" : "bg-white text-slate-700 shadow-2xs"
+                          }`}
+                        >
+                          {idx + 1}
                         </div>
-                        <div className="text-[11px] text-[#4B5563] mt-0.5">{stop.address}</div>
-                        <div className="text-[11px] font-semibold text-[#00993F] mt-0.5">
-                          {stop.stream}
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <div className="text-left">
+                          <div className="font-extrabold flex items-center gap-1.5">
+                            <span>{route.name}</span>
+                            {isFull && (
+                              <span
+                                className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                                  isSelected
+                                    ? "bg-amber-400 text-slate-900"
+                                    : "bg-amber-100 text-amber-900 border border-amber-300"
+                                }`}
+                              >
+                                Max Cap
+                              </span>
+                            )}
+                          </div>
+                          <div className={`text-[10px] ${isSelected ? "text-white/80" : "text-[#9CA3AF]"}`}>
+                            {route.routeCode} • {vehicle?.plateNumber || "Truck"} ({route.driverName}) • {stopsCount}/{maxStopsLimit} stops
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-[#F6F8F7] rounded-nested border border-dashed border-[#E3E9E5] text-center space-y-2">
+                <p className="text-xs text-slate-600 font-medium">
+                  No routes or stops scheduled for <strong>{formatDate(selectedDate)}</strong>.
+                </p>
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    onClick={handleRefreshOperations}
+                    className="px-3 py-1.5 rounded-nested bg-[#00993F] text-white font-bold text-xs shadow-xs hover:bg-[#008235] cursor-pointer"
+                  >
+                    Sync Client Schedule for this Date
+                  </button>
+                  <Link
+                    href="/operations/schedule"
+                    className="px-3 py-1.5 rounded-nested bg-white border border-[#E3E9E5] text-slate-700 font-bold text-xs hover:bg-[#EDF9F1] block"
+                  >
+                    View Weekly Schedule
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {currentRouteItem && (
+            <>
+              {/* Dispatch Action Control Bar */}
+              <div className="bg-white rounded-card p-4 border border-[#E3E9E5] shadow-card-elevated flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#EDF9F1] text-[#00993F] flex items-center justify-center font-bold">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Dispatch Status:
+                      </span>
                       <Badge
                         variant={
-                          stop.status === "completed"
+                          currentRouteItem.route.status === "completed"
                             ? "primary"
-                            : stop.status === "in_progress"
+                            : currentRouteItem.route.status === "in_progress"
                             ? "cyan"
                             : "neutral"
                         }
                         dot
                       >
-                        {stop.status.replace("_", " ")}
+                        {currentRouteItem.route.status === "in_progress"
+                          ? "In Progress (Live)"
+                          : currentRouteItem.route.status.charAt(0).toUpperCase() +
+                            currentRouteItem.route.status.slice(1)}
                       </Badge>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Driver: <strong>{currentRouteItem.route.driverName}</strong> • Vehicle:{" "}
+                      <strong>{currentRouteItem.vehicle?.plateNumber || "Pending"}</strong> • Crew:{" "}
+                      {currentRouteItem.route.crewNames || "Assigned depot crew"}
+                    </p>
+                  </div>
+                </div>
 
-                      {stop.status === "pending" && (
-                        <button
-                          onClick={handleReschedule}
-                          className="text-[11px] font-bold text-[#785608] hover:underline bg-[#FFF8D6] px-2 py-1 rounded-nested border border-[#FCE38A] cursor-pointer"
-                        >
-                          Reschedule
-                        </button>
-                      )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {currentRouteItem.route.status === "planned" && (
+                    <button
+                      onClick={() => handleDispatchRoute("in_progress")}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-nested bg-[#00993F] text-white text-xs font-bold hover:bg-[#008235] shadow-xs cursor-pointer transition-colors"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Dispatch Route to Driver</span>
+                    </button>
+                  )}
+
+                  {currentRouteItem.route.status === "in_progress" && (
+                    <button
+                      onClick={() => handleDispatchRoute("completed")}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-nested bg-[#08A6BA] text-white text-xs font-bold hover:bg-[#067382] shadow-xs cursor-pointer transition-colors"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Mark Route Completed</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={openReassignModal}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-nested bg-white hover:bg-[#F6F8F7] text-slate-700 text-xs font-bold border border-[#E3E9E5] shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Assign Resources</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsManifestModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-nested bg-[#EDF9F1] hover:bg-[#ADE4C1] text-[#00682B] text-xs font-bold border border-[#ADE4C1] shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-[#00993F]" />
+                    <span>View Digital Manifest</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Capacity Alert Banner if Selected Route is over capacity */}
+              {isOverCapacity && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-card flex items-start gap-3 text-xs text-amber-900">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-bold">
+                      Route Exceeds Maximum Capacity Limit ({stopsOnCurrentRoute} Stops / Max {maxStopsLimit})
+                    </span>
+                    <p className="text-[11px] text-amber-800">
+                      This route has more pickup points than the configured threshold of {maxStopsLimit} stops.
+                      Open <strong>&ldquo;Capacity Settings&rdquo;</strong> to adjust capacity or automatically re-balance overflow loops with company trucks.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Telemetry Stat Cards for Currently Selected Route */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard
+                  title="Stops on Route"
+                  value={`${currentRouteItem.route.completedStops || 0} / ${stopsOnCurrentRoute}`}
+                  subtitle={
+                    stopsOnCurrentRoute >= maxStopsLimit
+                      ? `At full capacity (${maxStopsLimit} cap)`
+                      : `${maxStopsLimit - stopsOnCurrentRoute} slots available`
+                  }
+                  icon={<CheckCircle2 className="w-5 h-5" />}
+                  accentColor={isOverCapacity ? "amber" : "primary"}
+                />
+
+                <StatCard
+                  title="Assigned Vehicle"
+                  value={currentRouteItem.vehicle?.plateNumber || "Pending"}
+                  subtitle={currentRouteItem.vehicle?.model || "Fleet vehicle"}
+                  icon={<Truck className="w-5 h-5" />}
+                  accentColor="cyan"
+                />
+
+                <StatCard
+                  title="Distance Logged"
+                  value={`${currentRouteItem.route.totalDistanceKm || "38.5"} km`}
+                  subtitle="Corridor telemetry"
+                  icon={<Navigation className="w-5 h-5" />}
+                  accentColor="neutral"
+                />
+
+                <StatCard
+                  title="Fuel Consumed"
+                  value={`${currentRouteItem.route.fuelUsedLitres || "16.2"} L`}
+                  subtitle="2.4 km per litre avg"
+                  icon={<Fuel className="w-5 h-5" />}
+                  accentColor="amber"
+                />
+              </div>
+
+              {/* Stops Sequence and Corridor Map Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left: Stops Sequence Manifest */}
+                <div className="lg:col-span-2 bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-elevated">
+                  <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#F0F4F2]">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-[#00993F]" />
+                        <span>Stop Waypoint Sequence — {currentRouteItem.route.name}</span>
+                      </h3>
+                      <p className="text-xs text-[#4B5563]">
+                        Driver: <strong>{currentRouteItem.route.driverName}</strong> • Phone:{" "}
+                        {currentRouteItem.route.driverPhone || "+254 712 345 678"} • Crew:{" "}
+                        {currentRouteItem.route.crewNames || "Assigned depot crew"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#00993F] bg-[#EDF9F1] px-2.5 py-1 rounded-full border border-[#ADE4C1]">
+                        <GripVertical className="w-3.5 h-3.5" />
+                        <span>Drag to reorder</span>
+                      </span>
+                      <Badge variant={currentRouteItem.route.status === "completed" ? "neutral" : "cyan"} dot>
+                        {currentRouteItem.route.status.replace("_", " ") || "Active"}
+                      </Badge>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Right: GPS Route Visualization & Depot Info */}
-            <div className="space-y-6">
-              <div className="bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-elevated">
-                <h3 className="text-sm font-bold text-slate-900 pb-3 border-b border-[#F0F4F2] mb-3 flex items-center gap-2">
-                  <Navigation className="w-4 h-4 text-[#08A6BA]" />
-                  <span>Corridor Vector Map</span>
-                </h3>
+                  {displayStops.length > 0 ? (
+                    <div className="space-y-3">
+                      {displayStops.map((stop, idx) => {
+                        const isDraggingThis = draggedIndex === idx;
+                        const isOverThis = dragOverIndex === idx && draggedIndex !== idx;
 
-                {/* SVG Interactive Map Simulation */}
-                <div className="w-full h-56 bg-[#111827] rounded-nested relative overflow-hidden flex items-center justify-center p-4">
-                  <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#00993F_1px,transparent_1px)] [background-size:16px_16px]" />
+                        return (
+                          <div
+                            key={stop.jobId}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, idx)}
+                            onDragOver={(e) => handleDragOver(e, idx)}
+                            onDragLeave={() => handleDragLeave(idx)}
+                            onDrop={(e) => handleDrop(e, idx)}
+                            onDragEnd={handleDragEnd}
+                            className={`p-3.5 rounded-nested border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all cursor-grab active:cursor-grabbing select-none ${
+                              isDraggingThis
+                                ? "opacity-40 border-dashed border-[#00993F] bg-emerald-50/50 scale-[0.99]"
+                                : isOverThis
+                                ? "border-[#00993F] ring-2 ring-[#00993F]/30 bg-[#EDF9F1] shadow-md scale-[1.01]"
+                                : stop.status === "completed"
+                                ? "bg-[#F6F8F7] border-[#E3E9E5]"
+                                : stop.status === "in_progress"
+                                ? "bg-[#EEFBFD] border-[#B6EEF5] shadow-xs ring-1 ring-[#08A6BA]"
+                                : "bg-white border-[#E3E9E5] hover:border-[#00993F]/50 hover:shadow-2xs"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              {/* Drag Handle */}
+                              <div
+                                title="Drag to reorder waypoint sequence"
+                                className="text-slate-400 hover:text-[#00993F] p-1 rounded-sm shrink-0 mt-0.5 transition-colors"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </div>
 
-                  <svg className="w-full h-full" viewBox="0 0 300 200">
-                    <path
-                      d="M 30,170 Q 70,50 140,80 T 260,30"
-                      fill="none"
-                      stroke="#08A6BA"
-                      strokeWidth="3"
-                      strokeDasharray="6,4"
-                    />
-                    <circle cx="30" cy="170" r="7" fill="#00993F" />
-                    <text x="42" y="175" fill="#FFFFFF" fontSize="10" fontWeight="bold">
-                      Depot
-                    </text>
+                              <div
+                                className={`w-7 h-7 rounded-full font-mono text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 ${
+                                  stop.status === "completed"
+                                    ? "bg-[#00993F] text-white"
+                                    : stop.status === "in_progress"
+                                    ? "bg-[#08A6BA] text-white animate-pulse"
+                                    : "bg-[#F0F4F2] text-[#4B5563]"
+                                }`}
+                              >
+                                {stop.seq}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-900 text-xs">{stop.name}</span>
+                                  <span className="text-[11px] font-mono text-[#9CA3AF]">{stop.time}</span>
+                                </div>
+                                <div className="text-[11px] text-[#4B5563] mt-0.5">{stop.address}</div>
+                                <div className="text-[11px] font-semibold text-[#00993F] mt-0.5">
+                                  {stop.stream}
+                                </div>
+                              </div>
+                            </div>
 
-                    <circle cx="95" cy="85" r="5" fill="#00993F" />
-                    <circle cx="140" cy="80" r="5" fill="#00993F" />
-                    <circle cx="180" cy="65" r="6" fill="#08A6BA" className="animate-pulse" />
-                    <text x="170" y="50" fill="#FECA36" fontSize="10" fontWeight="bold">
-                      {currentRouteItem?.vehicle?.plateNumber || "Truck"}
-                    </text>
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              <Badge
+                                variant={
+                                  stop.status === "completed"
+                                    ? "primary"
+                                    : stop.status === "in_progress"
+                                    ? "cyan"
+                                    : "neutral"
+                                }
+                                dot
+                              >
+                                {stop.status.replace("_", " ")}
+                              </Badge>
 
-                    <circle cx="260" cy="30" r="7" fill="#FECA36" />
-                    <text x="210" y="25" fill="#FFFFFF" fontSize="10" fontWeight="bold">
-                      Weighbridge
-                    </text>
-                  </svg>
+                              {stop.status !== "completed" && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRescheduleJobTarget({
+                                      id: stop.jobId,
+                                      clientName: stop.name,
+                                      jobNumber: stop.jobNumber,
+                                    });
+                                    setRescheduleDateInput(selectedDate);
+                                  }}
+                                  className="text-[11px] font-bold text-[#785608] hover:underline bg-[#FFF8D6] px-2 py-1 rounded-nested border border-[#FCE38A] cursor-pointer"
+                                >
+                                  Reschedule
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-[#F6F8F7] rounded-nested border border-dashed border-[#E3E9E5] space-y-2">
+                      <p className="text-xs text-slate-600 font-medium">
+                        No collection stops assigned to this route manifest.
+                      </p>
+                      <button
+                        onClick={handleRefreshOperations}
+                        className="px-3 py-1.5 rounded-nested bg-[#00993F] text-white text-xs font-bold shadow-xs hover:bg-[#008235] cursor-pointer"
+                      >
+                        Auto-Distribute Scheduled Stops
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                <div className="mt-4 p-3 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5] text-xs space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-[#9CA3AF]">Origin Depot:</span>
-                    <span className="font-semibold text-slate-800">
-                      {currentRouteItem?.route.startDepot}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#9CA3AF]">Disposal / Recovery:</span>
-                    <span className="font-semibold text-slate-800">
-                      {currentRouteItem?.route.endDestination}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#9CA3AF]">Telemetry Link:</span>
-                    <span className="font-bold text-[#00993F]">GPS Fix Verified (10 satellites)</span>
+                {/* Right: GPS Route Visualization & Depot Info */}
+                <div className="space-y-6">
+                  <div className="bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-elevated">
+                    <h3 className="text-sm font-bold text-slate-900 pb-3 border-b border-[#F0F4F2] mb-3 flex items-center gap-2">
+                      <Navigation className="w-4 h-4 text-[#08A6BA]" />
+                      <span>Corridor Vector Map</span>
+                    </h3>
+
+                    <div className="w-full h-56 bg-[#111827] rounded-nested relative overflow-hidden flex items-center justify-center p-4">
+                      <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#00993F_1px,transparent_1px)] [background-size:16px_16px]" />
+
+                      <svg className="w-full h-full" viewBox="0 0 300 200">
+                        <path
+                          d="M 30,170 Q 70,50 140,80 T 260,30"
+                          fill="none"
+                          stroke="#08A6BA"
+                          strokeWidth="3"
+                          strokeDasharray="6,4"
+                        />
+                        <circle cx="30" cy="170" r="7" fill="#00993F" />
+                        <text x="42" y="175" fill="#FFFFFF" fontSize="10" fontWeight="bold">
+                          Depot
+                        </text>
+
+                        <circle cx="95" cy="85" r="5" fill="#00993F" />
+                        <circle cx="140" cy="80" r="5" fill="#00993F" />
+                        <circle cx="180" cy="65" r="6" fill="#08A6BA" className="animate-pulse" />
+                        <text x="170" y="50" fill="#FECA36" fontSize="10" fontWeight="bold">
+                          {currentRouteItem.vehicle?.plateNumber || "Truck"}
+                        </text>
+
+                        <circle cx="260" cy="30" r="7" fill="#FECA36" />
+                        <text x="210" y="25" fill="#FFFFFF" fontSize="10" fontWeight="bold">
+                          Weighbridge
+                        </text>
+                      </svg>
+                    </div>
+
+                    <div className="mt-4 p-3 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5] text-xs space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-[#9CA3AF]">Origin Depot:</span>
+                        <span className="font-semibold text-slate-800">
+                          {currentRouteItem.route.startDepot}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#9CA3AF]">Disposal / Recovery:</span>
+                        <span className="font-semibold text-slate-800">
+                          {currentRouteItem.route.endDestination}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#9CA3AF]">Telemetry Link:</span>
+                        <span className="font-bold text-[#00993F]">GPS Fix Verified (10 satellites)</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -795,7 +1080,6 @@ export function RoutesView({
 
               {/* Filters */}
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                {/* Search */}
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#9CA3AF]" />
                   <input
@@ -807,7 +1091,6 @@ export function RoutesView({
                   />
                 </div>
 
-                {/* Range Filter */}
                 <select
                   value={historyRangeFilter}
                   onChange={(e) => setHistoryRangeFilter(e.target.value as any)}
@@ -818,7 +1101,6 @@ export function RoutesView({
                   <option value="30d">Past 30 Days</option>
                 </select>
 
-                {/* Status Filter */}
                 <select
                   value={historyStatusFilter}
                   onChange={(e) => setHistoryStatusFilter(e.target.value)}
@@ -916,7 +1198,7 @@ export function RoutesView({
                         <td className="py-3 px-4 text-right">
                           <button
                             onClick={() => {
-                              setSelectedDate(rDate);
+                              handleDateChange(rDate);
                               setSelectedRouteId(route.id);
                               setActiveTab("active");
                             }}
@@ -955,21 +1237,13 @@ export function RoutesView({
               </div>
               <button
                 onClick={() => setIsSettingsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700"
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {settingsSavedMessage && (
-              <div className="p-3 bg-[#EDF9F1] border border-[#ADE4C1] rounded-nested text-xs font-bold text-[#00682B] flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{settingsSavedMessage}</span>
-              </div>
-            )}
-
             <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
-              {/* Max Stops Setting */}
               <div>
                 <label className="font-bold text-slate-800 block mb-1">
                   Maximum Pickup Points / Stops per Route *
@@ -984,7 +1258,7 @@ export function RoutesView({
                     className="w-24 p-2 bg-[#F6F8F7] border border-[#E3E9E5] rounded-nested text-sm font-bold text-slate-900 focus:outline-none focus:border-[#00993F]"
                   />
                   <div className="flex items-center gap-1.5">
-                    {[5, 6, 8, 10, 12].map((preset) => (
+                    {[4, 5, 6, 8, 10].map((preset) => (
                       <button
                         type="button"
                         key={preset}
@@ -1001,11 +1275,10 @@ export function RoutesView({
                   </div>
                 </div>
                 <span className="text-[11px] text-[#4B5563] mt-1 block">
-                  Recommended: 6 to 8 stops per route for commercial compaction trucks.
+                  Recommended: 6 stops for compactor trucks in urban sectors.
                 </span>
               </div>
 
-              {/* Auto-Split Toggle */}
               <div className="p-3.5 bg-[#F6F8F7] rounded-nested border border-[#E3E9E5] space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900">
@@ -1024,7 +1297,6 @@ export function RoutesView({
                 </p>
               </div>
 
-              {/* Depot Information */}
               <div className="space-y-2 text-[11px] text-[#4B5563]">
                 <div className="flex items-center gap-1.5 font-semibold text-slate-700">
                   <Info className="w-3.5 h-3.5 text-[#00993F]" />
@@ -1034,7 +1306,6 @@ export function RoutesView({
                 <p>Destination: {dispatchSettingsState.defaultEndDestination}</p>
               </div>
 
-              {/* Footer */}
               <div className="pt-3 border-t border-[#F0F4F2] flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -1048,7 +1319,7 @@ export function RoutesView({
                   disabled={settingsLoading}
                   className="px-4 py-2 text-xs font-bold bg-[#00993F] text-white rounded-nested hover:bg-[#008235] shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  {settingsLoading ? "Saving..." : "Save Settings"}
+                  {settingsLoading ? "Saving..." : "Save Settings & Rebalance"}
                 </button>
               </div>
             </form>
@@ -1056,95 +1327,324 @@ export function RoutesView({
         </div>
       )}
 
-      {/* MODAL 2: PLAN ROUTE MODAL */}
-      {isCreateModalOpen && (
+      {/* MODAL 2: ASSIGN DRIVER & TRUCK MODAL */}
+      {isAssignModalOpen && currentRouteItem && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-card max-w-md w-full p-6 shadow-modal border border-[#E3E9E5] animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-card max-w-md w-full p-6 shadow-2xl border border-[#E3E9E5] animate-in fade-in zoom-in-95 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0F4F2]">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Truck className="w-4 h-4 text-[#00993F]" />
-                <span>Create Daily Route Manifest</span>
-              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#EDF9F1] text-[#00993F] flex items-center justify-center font-bold">
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">
+                    Assign Resources to Route
+                  </h3>
+                  <p className="text-[11px] text-[#4B5563]">
+                    {currentRouteItem.route.routeCode} — {currentRouteItem.route.name}
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700"
+                onClick={() => setIsAssignModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateRoute} className="mt-4 space-y-3.5 text-xs">
+            <form onSubmit={handleSaveReassignment} className="space-y-4 text-xs">
               <div>
-                <label className="font-bold text-[#4B5563] block mb-1">Route Corridor Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Karen & Langata Residential Route (Loop 2)"
-                  value={routeName}
-                  onChange={(e) => setRouteName(e.target.value)}
-                  className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-[#4B5563] block mb-1">Assign Fleet Vehicle *</label>
+                <label className="font-bold text-slate-800 block mb-1">Assigned Vehicle *</label>
                 <select
-                  value={selectedVehicleId}
+                  value={reassignVehicleId}
                   onChange={(e) => {
-                    setSelectedVehicleId(e.target.value);
-                    const veh = fleetVehicles.find((v) => v.id === e.target.value);
-                    if (veh?.assignedDriverName) setDriverName(veh.assignedDriverName);
+                    setReassignVehicleId(e.target.value);
+                    const v = fleetVehicles.find((veh) => veh.id === e.target.value);
+                    if (v?.assignedDriverName) {
+                      setReassignDriverName(v.assignedDriverName);
+                      if (v.assignedDriverPhone) setReassignDriverPhone(v.assignedDriverPhone);
+                    }
                   }}
-                  className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
+                  className="w-full p-2 bg-[#F6F8F7] border border-[#E3E9E5] rounded-nested text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#00993F]"
                 >
+                  <option value="">Select a vehicle from fleet...</option>
                   {fleetVehicles.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.plateNumber} — {v.model} ({v.assignedDriverName || "Driver"})
+                      {v.plateNumber} — {v.model} ({v.type.replace("_", " ")})
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-[#4B5563] block mb-1">Assigned Driver</label>
-                  <input
-                    type="text"
-                    required
-                    value={driverName}
-                    onChange={(e) => setDriverName(e.target.value)}
-                    className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-[#4B5563] block mb-1">Route Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={routeDate}
-                    onChange={(e) => setRouteDate(e.target.value)}
-                    className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
-                  />
-                </div>
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">Driver Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={reassignDriverName}
+                  onChange={(e) => setReassignDriverName(e.target.value)}
+                  placeholder="e.g. Mohammed Bakari"
+                  className="w-full p-2 bg-[#F6F8F7] border border-[#E3E9E5] rounded-nested text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#00993F]"
+                />
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#F0F4F2]">
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">Driver Contact Phone</label>
+                <input
+                  type="text"
+                  value={reassignDriverPhone}
+                  onChange={(e) => setReassignDriverPhone(e.target.value)}
+                  placeholder="e.g. +254 712 345 678"
+                  className="w-full p-2 bg-[#F6F8F7] border border-[#E3E9E5] rounded-nested text-xs text-slate-900 focus:outline-none focus:border-[#00993F]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">Crew Members (Helper Staff)</label>
+                <input
+                  type="text"
+                  value={reassignCrewNames}
+                  onChange={(e) => setReassignCrewNames(e.target.value)}
+                  placeholder="e.g. Peter Maina, Samuel Kipkorir"
+                  className="w-full p-2 bg-[#F6F8F7] border border-[#E3E9E5] rounded-nested text-xs text-slate-900 focus:outline-none focus:border-[#00993F]"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-[#F0F4F2] flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#4B5563] hover:bg-[#F0F4F2] rounded-nested cursor-pointer"
+                  onClick={() => setIsAssignModalOpen(false)}
+                  className="px-3 py-2 text-xs font-bold text-[#4B5563] hover:bg-[#F0F4F2] rounded-nested cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold bg-[#00993F] text-white rounded-nested hover:bg-[#008235] cursor-pointer"
+                  disabled={reassignLoading}
+                  className="px-4 py-2 text-xs font-bold bg-[#00993F] text-white rounded-nested hover:bg-[#008235] shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  Create Manifest
+                  {reassignLoading ? "Saving..." : "Save & Sync Manifest"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: RESCHEDULE STOP MODAL */}
+      {rescheduleJobTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-card max-w-sm w-full p-6 shadow-2xl border border-[#E3E9E5] animate-in fade-in zoom-in-95 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F0F4F2]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Reschedule Stop</h3>
+                  <p className="text-[11px] text-[#4B5563]">{rescheduleJobTarget.clientName}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRescheduleJobTarget(null)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-600">
+                Move job <strong>{rescheduleJobTarget.jobNumber}</strong> to another operational date manifest:
+              </p>
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">New Collection Date *</label>
+                <input
+                  type="date"
+                  value={rescheduleDateInput}
+                  onChange={(e) => setRescheduleDateInput(e.target.value)}
+                  className="w-full p-2 bg-[#F6F8F7] border border-[#E3E9E5] rounded-nested text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00993F]"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-[#F0F4F2] flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRescheduleJobTarget(null)}
+                className="px-3 py-2 text-xs font-bold text-[#4B5563] hover:bg-[#F0F4F2] rounded-nested cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReschedule}
+                className="px-4 py-2 text-xs font-bold bg-[#00993F] text-white rounded-nested hover:bg-[#008235] shadow-xs cursor-pointer"
+              >
+                Confirm Reschedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: OFFICIAL DIGITAL ROUTE MANIFEST MODAL (PRINT READY) */}
+      {isManifestModalOpen && currentRouteItem && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-card max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-[#E3E9E5] max-h-[90vh] overflow-y-auto space-y-5 animate-in fade-in zoom-in-95">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-[#E3E9E5]">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-xs bg-[#EDF9F1] text-[#00993F] px-2 py-0.5 rounded border border-[#ADE4C1]">
+                    {currentRouteItem.route.routeCode}
+                  </span>
+                  <span className="text-xs text-slate-500 font-bold uppercase">
+                    Official Daily Collection Manifest
+                  </span>
+                </div>
+                <h2 className="text-lg font-black text-slate-900 mt-1">
+                  {currentRouteItem.route.name}
+                </h2>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Date: <strong>{formatDate(selectedDate)}</strong> • Start: {currentRouteItem.route.startDepot} • Destination: {currentRouteItem.route.endDestination}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-nested bg-[#00993F] text-white text-xs font-bold hover:bg-[#008235] shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Manifest</span>
+                </button>
+                <button
+                  onClick={() => setIsManifestModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Logistics Resources Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5] text-xs">
+              <div>
+                <span className="text-slate-500 block text-[11px] font-bold uppercase">
+                  Assigned Truck
+                </span>
+                <strong className="text-slate-900 text-sm">
+                  {currentRouteItem.vehicle?.plateNumber || "Pending Vehicle"}
+                </strong>
+                <span className="text-slate-500 block text-[11px]">
+                  {currentRouteItem.vehicle?.model || "Fleet Unit"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 block text-[11px] font-bold uppercase">
+                  Lead Driver
+                </span>
+                <strong className="text-slate-900 text-sm">
+                  {currentRouteItem.route.driverName}
+                </strong>
+                <span className="text-slate-500 block text-[11px]">
+                  {currentRouteItem.route.driverPhone || "+254 712 345 678"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 block text-[11px] font-bold uppercase">
+                  Field Crew
+                </span>
+                <strong className="text-slate-900 text-sm">
+                  {currentRouteItem.route.crewNames || "Peter Maina, Samuel Kipkorir"}
+                </strong>
+                <span className="text-slate-500 block text-[11px]">
+                  {displayStops.length} stops ({displayStops.filter((s) => s.status === "completed").length} completed)
+                </span>
+              </div>
+            </div>
+
+            {/* Stops Table */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2.5">
+                Waypoint Manifest Stops ({displayStops.length})
+              </h4>
+              <div className="border border-[#E3E9E5] rounded-nested overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F0F4F2] text-slate-700 font-bold border-b border-[#E3E9E5]">
+                    <tr>
+                      <th className="py-2.5 px-3 w-10 text-center">#</th>
+                      <th className="py-2.5 px-3">Client & Location</th>
+                      <th className="py-2.5 px-3">Contact</th>
+                      <th className="py-2.5 px-3">Waste Stream</th>
+                      <th className="py-2.5 px-3 text-right">Est. Kg</th>
+                      <th className="py-2.5 px-3 text-right">Actual Kg</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E3E9E5]">
+                    {displayStops.map((stop) => (
+                      <tr key={stop.jobId} className="hover:bg-[#F6F8F7]">
+                        <td className="py-2.5 px-3 font-mono font-bold text-center text-slate-900">
+                          {stop.seq}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <strong className="text-slate-900 block">{stop.name}</strong>
+                          <span className="text-[11px] text-slate-500">{stop.address}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-600 font-mono text-[11px]">
+                          {stop.phone}
+                        </td>
+                        <td className="py-2.5 px-3 font-medium text-[#00993F]">
+                          {stop.stream}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                          {stop.expectedKg} kg
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                          {stop.actualWeightKg ? `${stop.actualWeightKg} kg` : "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <Badge
+                            variant={
+                              stop.status === "completed"
+                                ? "primary"
+                                : stop.status === "in_progress"
+                                ? "cyan"
+                                : "neutral"
+                            }
+                          >
+                            {stop.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Signature & Verification Footnotes */}
+            <div className="pt-4 border-t border-[#E3E9E5] grid grid-cols-2 gap-6 text-[11px] text-slate-600">
+              <div className="space-y-4">
+                <div>
+                  <span className="font-bold block text-slate-900">Lead Driver Verification:</span>
+                  <div className="mt-2 border-b border-dashed border-slate-400 w-48" />
+                  <span className="text-[10px] text-slate-500">Signature / Date</span>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <span className="font-bold block text-slate-900">Depot Weighbridge Officer:</span>
+                  <div className="mt-2 border-b border-dashed border-slate-400 w-48" />
+                  <span className="text-[10px] text-slate-500">Gross / Tare Seal Verification</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

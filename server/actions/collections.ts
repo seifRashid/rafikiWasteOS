@@ -2,9 +2,11 @@
 
 import { z } from "zod";
 import { db } from "@/server/db";
-import { collectionJobs, jobStatusEnum, missedReasonEnum, vehicles } from "@/server/db/schema";
-import { eq } from "drizzle-orm";
+import { collectionJobs, jobStatusEnum, missedReasonEnum, vehicles, routes } from "@/server/db/schema";
+import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { getCollectionJobsWithDetails } from "@/server/db/queries";
+import { syncDateOperations } from "./routes";
 
 const RecordWeightSchema = z.object({
   jobId: z.string().uuid(),
@@ -113,13 +115,52 @@ export async function updateJobStatusAction(rawInput: unknown) {
       updatePayload.actualWeightKg = actualWeightKg.toFixed(2);
     }
 
+    const [existingJob] = await db
+      .select({ id: collectionJobs.id, routeId: collectionJobs.routeId })
+      .from(collectionJobs)
+      .where(eq(collectionJobs.id, jobId))
+      .limit(1);
+
     await db.update(collectionJobs).set(updatePayload).where(eq(collectionJobs.id, jobId));
 
-    revalidatePath("/collections");
-    revalidatePath("/routes");
-    revalidatePath("/field");
-    revalidatePath("/driver");
-    revalidatePath("/");
+    // If job is part of a route, recalculate route's completed stops
+    if (existingJob?.routeId) {
+      const allRouteJobs = await db
+        .select({ status: collectionJobs.status })
+        .from(collectionJobs)
+        .where(
+          and(
+            eq(collectionJobs.routeId, existingJob.routeId),
+            eq(collectionJobs.isDeleted, false)
+          )
+        );
+
+      const completedCount = allRouteJobs.filter((j) =>
+        ["collected", "delivered", "completed"].includes(j.status)
+      ).length;
+
+      await db
+        .update(routes)
+        .set({
+          completedStops: completedCount,
+          status: completedCount >= allRouteJobs.length && allRouteJobs.length > 0 ? "completed" : "in_progress",
+          updatedAt: new Date(),
+        })
+        .where(eq(routes.id, existingJob.routeId));
+    }
+
+    try {
+      revalidatePath("/operations/routes");
+      revalidatePath("/operations/schedule");
+      revalidatePath("/operations/jobs");
+      revalidatePath("/collections");
+      revalidatePath("/routes");
+      revalidatePath("/field");
+      revalidatePath("/driver");
+      revalidatePath("/");
+    } catch {
+      // Ignored outside Next.js request lifecycle
+    }
 
     return { success: true };
   } catch (error) {
@@ -147,11 +188,18 @@ export async function reportMissedJobAction(rawInput: unknown) {
       })
       .where(eq(collectionJobs.id, jobId));
 
-    revalidatePath("/collections");
-    revalidatePath("/routes");
-    revalidatePath("/field");
-    revalidatePath("/driver");
-    revalidatePath("/");
+    try {
+      revalidatePath("/operations/routes");
+      revalidatePath("/operations/schedule");
+      revalidatePath("/operations/jobs");
+      revalidatePath("/collections");
+      revalidatePath("/routes");
+      revalidatePath("/field");
+      revalidatePath("/driver");
+      revalidatePath("/");
+    } catch {
+      // Ignored outside Next.js request lifecycle
+    }
 
     return { success: true };
   } catch (error) {
@@ -160,16 +208,43 @@ export async function reportMissedJobAction(rawInput: unknown) {
   }
 }
 
+export async function refreshJobsAction(targetDateIso?: string) {
+  try {
+    if (targetDateIso) {
+      await syncDateOperations(targetDateIso);
+    }
+    const freshJobs = await getCollectionJobsWithDetails();
+    return { success: true, jobs: freshJobs };
+  } catch (error) {
+    console.error("[ACTION_ERROR: refreshJobsAction]", error);
+    return { success: false, error: "Failed to refresh collection jobs." };
+  }
+}
+
 export async function createJobAction(rawInput: {
   clientId: string;
   wasteStream: "organic" | "recyclable" | "residual" | "hazardous" | "electronic";
   expectedQuantityKg: number;
   scheduledAt: string;
+  vehicleId?: string;
+  driverName?: string;
   notes?: string;
 }) {
   try {
-    const randomSeq = Math.floor(1000 + Math.random() * 9000);
-    const jobNumber = `JOB-2026-${randomSeq}`;
+    const dateStr = rawInput.scheduledAt.split("T")[0] || new Date().toISOString().split("T")[0];
+    const prefix = `JOB-${dateStr.replace(/-/g, "")}-`;
+
+    const allJobs = await db.select({ jobNumber: collectionJobs.jobNumber }).from(collectionJobs);
+    let maxSeq = 0;
+    for (const j of allJobs) {
+      if (j.jobNumber && j.jobNumber.startsWith(prefix)) {
+        const numPart = parseInt(j.jobNumber.replace(prefix, ""), 10);
+        if (!isNaN(numPart) && numPart > maxSeq) {
+          maxSeq = numPart;
+        }
+      }
+    }
+    const jobNumber = `${prefix}${String(maxSeq + 1).padStart(3, "0")}`;
 
     const [newJob] = await db
       .insert(collectionJobs)
@@ -179,11 +254,15 @@ export async function createJobAction(rawInput: {
         wasteStream: rawInput.wasteStream,
         expectedQuantityKg: rawInput.expectedQuantityKg.toFixed(2),
         scheduledAt: new Date(rawInput.scheduledAt),
-        status: "scheduled",
-        notes: rawInput.notes || null,
+        vehicleId: rawInput.vehicleId || null,
+        driverName: rawInput.driverName || null,
+        status: rawInput.driverName ? "assigned" : "scheduled",
+        notes: rawInput.notes ? `[On-Demand] ${rawInput.notes}` : "[On-Demand] Direct booking",
       })
       .returning();
 
+    revalidatePath("/operations/jobs");
+    revalidatePath("/operations/routes");
     revalidatePath("/collections");
     revalidatePath("/routes");
     revalidatePath("/");

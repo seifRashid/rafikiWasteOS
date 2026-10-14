@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   "/admin/login",
   "/admin/register",
   "/pending-approval",
+  "/driver",
 ];
 
 export default async function proxy(request: NextRequest) {

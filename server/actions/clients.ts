@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import { clients, customerTypeEnum, collectionFrequencyEnum } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { syncDateOperations } from "./routes";
 
 const CreateClientSchema = z.object({
   name: z.string().min(2, "Client name is required"),
@@ -31,6 +32,7 @@ const CreateClientSchema = z.object({
     "monthly",
     "on_demand",
   ]),
+  collectionDays: z.string().optional(),
   wasteStreams: z.string().default("Organic, Recyclable"),
   binCount: z.string().default("2 x 240L Bins"),
   monthlyFee: z.number().nonnegative().default(0),
@@ -65,6 +67,7 @@ export async function createClientAction(rawInput: unknown): Promise<ActionRespo
       physicalAddress,
       countyRegion,
       collectionFrequency,
+      collectionDays,
       wasteStreams,
       binCount,
       monthlyFee,
@@ -89,6 +92,7 @@ export async function createClientAction(rawInput: unknown): Promise<ActionRespo
         physicalAddress,
         countyRegion,
         collectionFrequency,
+        collectionDays: collectionDays || null,
         wasteStreams,
         binCount,
         monthlyFee: monthlyFee.toFixed(2),
@@ -99,6 +103,7 @@ export async function createClientAction(rawInput: unknown): Promise<ActionRespo
       .returning();
 
     revalidatePath("/clients");
+    revalidatePath("/operations/schedule");
     revalidatePath("/");
 
     return { success: true, data: newClient };
@@ -119,10 +124,55 @@ export async function toggleClientStatusAction(
       .where(eq(clients.id, clientId));
 
     revalidatePath("/clients");
+    revalidatePath("/operations/schedule");
     revalidatePath(`/clients/${clientId}`);
     return { success: true };
   } catch (error) {
     console.error("[ACTION_ERROR: toggleClientStatusAction]", error);
     return { success: false, error: "Failed to update client status." };
+  }
+}
+
+export async function updateClientScheduleAction(
+  clientId: string,
+  collectionDays: string,
+  collectionFrequency?: "daily" | "twice_weekly" | "weekly" | "bi_weekly" | "monthly" | "on_demand"
+): Promise<ActionResponse> {
+  try {
+    const updateData: {
+      collectionDays: string;
+      updatedAt: Date;
+      collectionFrequency?: "daily" | "twice_weekly" | "weekly" | "bi_weekly" | "monthly" | "on_demand";
+    } = {
+      collectionDays,
+      updatedAt: new Date(),
+    };
+
+    if (collectionFrequency) {
+      updateData.collectionFrequency = collectionFrequency;
+    }
+
+    await db
+      .update(clients)
+      .set(updateData)
+      .where(eq(clients.id, clientId));
+
+    try {
+      await syncDateOperations("2026-10-14");
+    } catch (e) {
+      console.warn("[updateClientScheduleAction] syncDateOperations fallback:", e);
+    }
+
+    revalidatePath("/operations/schedule");
+    revalidatePath("/operations/routes");
+    revalidatePath("/routes");
+    revalidatePath("/clients");
+    revalidatePath(`/clients/${clientId}`);
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error) {
+    console.error("[ACTION_ERROR: updateClientScheduleAction]", error);
+    return { success: false, error: "Failed to update client collection schedule." };
   }
 }

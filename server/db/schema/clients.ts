@@ -43,6 +43,7 @@ export const clients = pgTable("clients", {
   physicalAddress: text("physical_address").notNull(),
   countyRegion: varchar("county_region", { length: 64 }).notNull(), // Nairobi, Mombasa, Kisumu, Nakuru, etc.
   collectionFrequency: collectionFrequencyEnum("collection_frequency").notNull().default("weekly"),
+  collectionDays: text("collection_days"), // e.g. "Monday, Wednesday" or "Monday" or "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday"
   wasteStreams: text("waste_streams").notNull().default("Organic, Recyclable"), // Comma-separated or descriptor
   binCount: varchar("bin_count", { length: 128 }).default("2 x 240L Wheeled Bins"),
   contractStartDate: date("contract_start_date"),

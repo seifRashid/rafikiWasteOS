@@ -42,6 +42,7 @@ const fallbackClients: Client[] = [
     physicalAddress: "Thika Road, Kasarani, Nairobi",
     countyRegion: "Nairobi",
     collectionFrequency: "daily",
+    collectionDays: "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday",
     wasteStreams: "Organic (Kitchen), Recyclable (Glass & PET)",
     binCount: "16 x 240L Wheeled Bins + 2 Skips",
     contractStartDate: "2026-01-01",
@@ -68,6 +69,7 @@ const fallbackClients: Client[] = [
     physicalAddress: "Argwings Kodhek Rd, Kilimani, Nairobi",
     countyRegion: "Nairobi",
     collectionFrequency: "twice_weekly",
+    collectionDays: "Tuesday, Friday",
     wasteStreams: "Organic, Cardboard, Mixed Plastic",
     binCount: "8 x 240L Wheeled Bins",
     contractStartDate: "2026-02-15",
@@ -94,6 +96,7 @@ const fallbackClients: Client[] = [
     physicalAddress: "Spring Valley Rd, Westlands, Nairobi",
     countyRegion: "Nairobi",
     collectionFrequency: "twice_weekly",
+    collectionDays: "Monday, Thursday",
     wasteStreams: "Paper/Cardboard, Food Scraps, Plastic Bins",
     binCount: "12 x 240L Color-Coded Bins",
     contractStartDate: "2026-01-10",
@@ -120,6 +123,7 @@ const fallbackClients: Client[] = [
     physicalAddress: "Corner of Kimathi & Mama Ngina St, CBD",
     countyRegion: "Nairobi",
     collectionFrequency: "daily",
+    collectionDays: "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday",
     wasteStreams: "Coffee Grounds, Food Waste, PET Cups",
     binCount: "4 x 240L Wheeled Bins",
     contractStartDate: "2026-03-01",
@@ -146,6 +150,7 @@ const fallbackClients: Client[] = [
     physicalAddress: "Ruaraka Industrial Area, Outer Ring Rd",
     countyRegion: "Nairobi",
     collectionFrequency: "weekly",
+    collectionDays: "Monday",
     wasteStreams: "Industrial PET Scraps, Wooden Pallets, Corrugated",
     binCount: "4 x 1100L Steel Skips",
     contractStartDate: "2026-01-01",
@@ -1338,3 +1343,5 @@ export async function getSystemRoles() {
   }
   return fallbackRoles;
 }
+
+export { getDriverPortalData, type DriverPortalData, type DriverStop } from "./driver-queries";

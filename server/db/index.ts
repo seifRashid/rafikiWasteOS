@@ -2,6 +2,16 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
 
+if (!process.env.DATABASE_URL) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const dotenv = require("dotenv");
+    dotenv.config({ path: ".env.local" });
+  } catch {
+    // Ignore in production
+  }
+}
+
 const fallbackDummyUrl =
   "postgresql://placeholder:placeholder@ep-placeholder.us-east-2.aws.neon.tech/neondb";
 

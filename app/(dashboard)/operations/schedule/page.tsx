@@ -16,8 +16,10 @@ import { getClientsWithStats, getFleetAndAssets, getRoutesWithAssignments } from
 import { db } from "@/server/db";
 import { collectionJobs, clients as clientsTable, vehicles as vehiclesTable } from "@/server/db/schema";
 import { eq, and, or, desc } from "drizzle-orm";
-import { formatDate, formatDateTime, formatWeight } from "@/lib/utils";
+import { formatDate, formatWeight } from "@/lib/utils";
+import { isClientCollectedOnDay } from "@/lib/schedule-utils";
 import { AssignTruckModal } from "@/components/operations/assign-truck-modal";
+import { EditClientScheduleModal } from "@/components/operations/edit-client-schedule-modal";
 
 export const dynamic = "force-dynamic";
 
@@ -44,30 +46,24 @@ export default async function OperationsSchedulePage() {
     getRoutesWithAssignments(),
   ]);
 
-  // Base contracted recurring capacity per day
-  const baseDays = [
-    { name: "Monday", count: 8, shift: "06:00 - 14:00" },
-    { name: "Tuesday", count: 6, shift: "06:00 - 14:00" },
-    { name: "Wednesday", count: 9, shift: "06:00 - 14:00" },
-    { name: "Thursday", count: 7, shift: "06:00 - 14:00" },
-    { name: "Friday", count: 11, shift: "06:00 - 15:00" },
-    { name: "Saturday", count: 5, shift: "07:00 - 13:00" },
+  // Operating days configuration
+  const weekDays = [
+    { name: "Monday", shift: "06:00 - 14:00" },
+    { name: "Tuesday", shift: "06:00 - 14:00" },
+    { name: "Wednesday", shift: "06:00 - 14:00" },
+    { name: "Thursday", shift: "06:00 - 14:00" },
+    { name: "Friday", shift: "06:00 - 15:00" },
+    { name: "Saturday", shift: "07:00 - 13:00" },
   ];
-
-  // Increment day count with real scheduled jobs
-  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const extraStopsByDay: Record<string, number> = {};
-
-  scheduledJobsData.forEach(({ job }) => {
-    const dayIndex = new Date(job.scheduledAt).getDay();
-    const dayName = dayNames[dayIndex];
-    extraStopsByDay[dayName] = (extraStopsByDay[dayName] || 0) + 1;
+  const days = weekDays.map((day) => {
+    const clientsOnDay = clients.filter((c) => isClientCollectedOnDay(c, day.name));
+    return {
+      name: day.name,
+      count: clientsOnDay.length,
+      shift: day.shift,
+      clientNames: clientsOnDay.map((c) => c.name),
+    };
   });
-
-  const days = baseDays.map((d) => ({
-    ...d,
-    count: d.count + (extraStopsByDay[d.name] || 0),
-  }));
 
   // Separate on-demand requests (notes containing "[On-Demand") from routine runs
   const onDemandRequests = scheduledJobsData.filter(
@@ -235,10 +231,11 @@ export default async function OperationsSchedulePage() {
                 <th className="py-3 px-4">Client Name</th>
                 <th className="py-3 px-4">Tier</th>
                 <th className="py-3 px-4">Frequency</th>
+                <th className="py-3 px-4">Collection Days</th>
                 <th className="py-3 px-4">Address / Area</th>
                 <th className="py-3 px-4">Containers</th>
                 <th className="py-3 px-4">Assigned Route</th>
-                <th className="py-3 px-4 text-right">Status</th>
+                <th className="py-3 px-4 text-right">Schedule Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F0F4F2]">
@@ -251,6 +248,26 @@ export default async function OperationsSchedulePage() {
                   <td className="py-3 px-4 font-semibold text-[#00993F] capitalize">
                     {c.collectionFrequency.replace("_", " ")}
                   </td>
+                  <td className="py-3 px-4">
+                    <div className="flex flex-wrap gap-1 max-w-xs">
+                      {c.collectionDays ? (
+                        c.collectionDays.split(",").map((d) => (
+                          <span
+                            key={d.trim()}
+                            className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#EDF9F1] text-[#00682B] border border-[#ADE4C1]"
+                          >
+                            {d.trim().slice(0, 3)}
+                          </span>
+                        ))
+                      ) : c.collectionFrequency === "daily" ? (
+                        <span className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#EDF9F1] text-[#00682B] border border-[#ADE4C1]">
+                          Mon - Sat (Daily)
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-[#9CA3AF] italic">Not set</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="py-3 px-4 text-[#4B5563] truncate max-w-xs">
                     {c.physicalAddress}
                   </td>
@@ -259,10 +276,14 @@ export default async function OperationsSchedulePage() {
                     RT-NAI-01 (Truck KDD 482B)
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00682B]">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#00993F]" />
-                      <span>On Schedule</span>
-                    </span>
+                    <EditClientScheduleModal
+                      client={{
+                        id: c.id,
+                        name: c.name,
+                        collectionFrequency: c.collectionFrequency,
+                        collectionDays: c.collectionDays || null,
+                      }}
+                    />
                   </td>
                 </tr>
               ))}

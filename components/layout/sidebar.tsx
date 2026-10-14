@@ -78,7 +78,7 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
       title: "OPERATIONS",
       icon: Truck,
       items: [
-        { name: "Jobs", href: "/operations/jobs", badge: "6 Active" },
+        { name: "Jobs", href: "/operations/jobs" },
         { name: "Routes", href: "/operations/routes" },
         { name: "Collection Schedule", href: "/operations/schedule" },
         { name: "Map", href: "/operations/map" },
