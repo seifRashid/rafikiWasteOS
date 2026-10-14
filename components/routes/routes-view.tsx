@@ -288,9 +288,11 @@ export function RoutesView({
       const res = await autoSplitAndGenerateRoutesAction(selectedDate);
       if (res.success) {
         setAutoSplitNotice(
-          `Capacity Balanced: Automatically split into ${res.routesCreated} routes (${res.totalStopsDistributed} stops, max ${res.maxStopsApplied} per route).`
+          `Capacity Balanced: Automatically split into ${res.routesCreated} routes (${res.totalStopsDistributed} stops, max ${res.maxStopsApplied} per route). Refreshing manifests...`
         );
-        setTimeout(() => setAutoSplitNotice(null), 5000);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
       } else {
         alert(res.error || "Unable to auto-split routes.");
       }

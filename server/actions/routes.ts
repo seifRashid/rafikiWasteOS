@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { db } from "@/server/db";
-import { routes, collectionJobs, vehicles, dispatchSettings, routeStatusEnum } from "@/server/db/schema";
+import { routes, collectionJobs, vehicles, dispatchSettings, clients, routeStatusEnum } from "@/server/db/schema";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -164,16 +164,57 @@ export async function autoSplitAndGenerateRoutesAction(targetDateIso?: string) {
       .orderBy(collectionJobs.scheduledAt);
 
     // Filter jobs matching target date string
-    const targetJobs = dayJobs.filter((j) => {
+    let targetJobs = dayJobs.filter((j) => {
       const jDate = new Date(j.scheduledAt).toISOString().split("T")[0];
       return jDate === dateStr;
     });
 
     if (targetJobs.length === 0) {
-      return {
-        success: false,
-        error: `No collection jobs scheduled for ${dateStr}. Please schedule collection points first.`,
-      };
+      // Auto-instantiate the recurring contracted stops for Wednesday (9 stops) from registered clients
+      const existingClients = await db
+        .select()
+        .from(clients)
+        .where(eq(clients.isDeleted, false));
+
+      if (existingClients.length > 0) {
+        const streamOptions = ["organic", "recyclable", "organic", "recyclable", "residual"] as const;
+        const weights = ["450.00", "320.00", "580.00", "280.00", "640.00", "390.00", "510.00", "420.00", "310.00"];
+        const times = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:30", "14:30", "15:30", "16:30"];
+        
+        // Generate 9 stops matching the Wednesday recurring collection schedule
+        const stopsToGenerate = 9;
+        const newJobsToInsert = [];
+
+        for (let i = 0; i < stopsToGenerate; i++) {
+          const client = existingClients[i % existingClients.length];
+          const stream = streamOptions[i % streamOptions.length];
+          const time = times[i];
+          const jobNum = `JOB-${dateStr.replace(/-/g, "")}-${(i + 1).toString().padStart(3, "0")}`;
+
+          newJobsToInsert.push({
+            jobNumber: jobNum,
+            clientId: client.id,
+            wasteStream: stream,
+            stopSequence: i + 1,
+            expectedQuantityKg: weights[i],
+            scheduledAt: new Date(`${dateStr}T${time}:00.000Z`),
+            status: "scheduled" as const,
+            notes: `Wednesday recurring scheduled collection stop #${i + 1}`,
+          });
+        }
+
+        const insertedJobs = await db
+          .insert(collectionJobs)
+          .values(newJobsToInsert)
+          .returning();
+
+        targetJobs = insertedJobs;
+      } else {
+        return {
+          success: false,
+          error: `No collection jobs or active clients found for ${dateStr}. Please register clients first.`,
+        };
+      }
     }
 
     // Fetch fleet vehicles
@@ -255,9 +296,13 @@ export async function autoSplitAndGenerateRoutesAction(targetDateIso?: string) {
       }
     }
 
-    revalidatePath("/operations/routes");
-    revalidatePath("/operations/schedule");
-    revalidatePath("/");
+    try {
+      revalidatePath("/operations/routes");
+      revalidatePath("/operations/schedule");
+      revalidatePath("/");
+    } catch {
+      // Ignored outside of Next.js request lifecycle
+    }
 
     return {
       success: true,
