@@ -260,7 +260,7 @@ export async function requestExtraPickupAction(
     revalidatePath("/portal/schedule");
     revalidatePath("/portal/collections");
     revalidatePath("/operations/schedule");
-    revalidatePath("/operations/jobs");
+    revalidatePath("/operations/collections");
     revalidatePath("/operations/routes");
     revalidatePath("/customers/requests");
 

@@ -29,10 +29,65 @@ export function getWeekdayNameFromDate(dateInput: Date | string): string {
 }
 
 /**
+ * Automatically calculates a clean human-readable frequency label from designated collection days
+ */
+export function getDerivedFrequency(collectionDays: string | null | undefined): string {
+  if (!collectionDays || !collectionDays.trim() || collectionDays.toLowerCase().includes("on-demand")) {
+    return "On-Demand";
+  }
+
+  const days = collectionDays
+    .split(",")
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (days.includes("daily") || days.length >= 6) {
+    return "Daily";
+  }
+  if (days.length === 2) {
+    return "Twice Weekly";
+  }
+  if (days.length === 1) {
+    return "Weekly";
+  }
+  if (days.length > 2) {
+    return `${days.length}x Weekly`;
+  }
+  return "Custom";
+}
+
+/**
+ * Returns database enum string ("daily" | "twice_weekly" | "weekly" | "on_demand") derived from days
+ */
+export function getDerivedFrequencyEnum(
+  collectionDays: string | null | undefined
+): "daily" | "twice_weekly" | "weekly" | "bi_weekly" | "monthly" | "on_demand" {
+  if (!collectionDays || !collectionDays.trim() || collectionDays.toLowerCase().includes("on-demand")) {
+    return "on_demand";
+  }
+
+  const days = collectionDays
+    .split(",")
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (days.includes("daily") || days.length >= 6) {
+    return "daily";
+  }
+  if (days.length === 2) {
+    return "twice_weekly";
+  }
+  if (days.length === 1) {
+    return "weekly";
+  }
+  return "weekly";
+}
+
+/**
  * Determines whether an active client is contracted/scheduled for collection on a specific day of the week
  */
 export function isClientCollectedOnDay(
-  client: Pick<Client, "isActive" | "isDeleted" | "collectionFrequency" | "collectionDays">,
+  client: Pick<Client, "isActive" | "isDeleted"> & Partial<Pick<Client, "collectionFrequency" | "collectionDays">>,
   dayName: string
 ): boolean {
   if (!client.isActive || client.isDeleted) return false;

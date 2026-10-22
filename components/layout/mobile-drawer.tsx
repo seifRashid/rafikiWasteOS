@@ -61,7 +61,7 @@ export function MobileDrawer({ currentUser }: MobileDrawerProps) {
       title: "OPERATIONS",
       icon: Truck,
       items: [
-        { name: "Jobs", href: "/operations/jobs", badge: "6 Active" },
+        { name: "Collections", href: "/operations/collections", badge: "6 Active" },
         { name: "Routes", href: "/operations/routes" },
         { name: "Collection Schedule", href: "/operations/schedule" },
         { name: "Map", href: "/operations/map" },

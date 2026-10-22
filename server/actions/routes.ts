@@ -101,7 +101,7 @@ export async function rescheduleMissedStopAction(jobId: string, newDateIso: stri
       })
       .where(eq(collectionJobs.id, jobId));
 
-    revalidatePath("/collections");
+    revalidatePath("/operations/collections");
     revalidatePath("/operations/routes");
     revalidatePath("/operations/schedule");
     revalidatePath("/field");
@@ -432,7 +432,7 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
     revalidatePath("/operations/routes");
     revalidatePath("/operations/schedule");
     revalidatePath("/driver");
-    revalidatePath("/operations/jobs");
+    revalidatePath("/operations/collections");
     revalidatePath("/");
   } catch {
     // Ignore outside of server request

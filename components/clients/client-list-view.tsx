@@ -20,9 +20,11 @@ import {
   GraduationCap,
   Utensils,
   Landmark,
+  Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
+import { getDerivedFrequency } from "@/lib/schedule-utils";
 import { createClientAction } from "@/server/actions/clients";
 import type { Client } from "@/server/db/schema";
 
@@ -47,7 +49,6 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
     phone: "",
     physicalAddress: "",
     countyRegion: "Nairobi",
-    collectionFrequency: "weekly",
     collectionDays: ["Wednesday"],
     wasteStreams: "Organic, Recyclable",
     binCount: "4 x 240L Wheeled Bins",
@@ -98,7 +99,6 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
             phone: "",
             physicalAddress: "",
             countyRegion: "Nairobi",
-            collectionFrequency: "weekly",
             collectionDays: ["Wednesday"],
             wasteStreams: "Organic, Recyclable",
             binCount: "4 x 240L Wheeled Bins",
@@ -218,7 +218,14 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0" />
-                  <span className="capitalize">{client.collectionFrequency.replace("_", " ")} pickup</span>
+                  <span className="font-semibold text-slate-700">
+                    {getDerivedFrequency(client.collectionDays || client.collectionFrequency)}
+                  </span>
+                  {client.collectionDays && (
+                    <span className="text-[11px] text-[#9CA3AF] truncate max-w-[120px]">
+                      ({client.collectionDays})
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -374,45 +381,72 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-[#4B5563] block mb-1">
-                      Collection Frequency
-                    </label>
-                    <select
-                      value={formData.collectionFrequency}
-                      onChange={(e) => {
-                        const freq = e.target.value;
-                        let days = formData.collectionDays;
-                        if (freq === "daily") {
-                          days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-                        } else if (freq === "twice_weekly") {
-                          days = ["Tuesday", "Friday"];
-                        } else if (freq === "weekly") {
-                          days = ["Wednesday"];
-                        }
-                        setFormData({ ...formData, collectionFrequency: freq, collectionDays: days });
-                      }}
-                      className="w-full p-2.5 rounded-nested border border-[#E3E9E5] bg-white focus:outline-none focus:border-[#00993F]"
-                    >
-                      <option value="daily">Daily</option>
-                      <option value="twice_weekly">Twice Weekly</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="bi_weekly">Bi-Weekly</option>
-                      <option value="on_demand">On Demand</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="font-bold text-[#4B5563] block mb-1">
+                    Monthly Contract Fee (KES) *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.monthlyFee}
+                    onChange={(e) => setFormData({ ...formData, monthlyFee: e.target.value })}
+                    className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
+                  />
+                </div>
 
-                  <div>
-                    <label className="font-bold text-[#4B5563] block mb-1">
-                      Monthly Contract Fee (KES)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.monthlyFee}
-                      onChange={(e) => setFormData({ ...formData, monthlyFee: e.target.value })}
-                      className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
-                    />
+                {/* Quick Presets */}
+                <div>
+                  <label className="font-bold text-[#4B5563] block mb-1">
+                    Quick Schedule Presets
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          collectionDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+                        })
+                      }
+                      className="p-1.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                    >
+                      ⚡ Daily (Mon – Sat)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          collectionDays: ["Tuesday", "Friday"],
+                        })
+                      }
+                      className="p-1.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                    >
+                      📅 Twice Wk (Tue, Fri)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          collectionDays: ["Wednesday"],
+                        })
+                      }
+                      className="p-1.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                    >
+                      📌 Weekly (Wed)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          collectionDays: [],
+                        })
+                      }
+                      className="p-1.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                    >
+                      🔔 On-Demand Only
+                    </button>
                   </div>
                 </div>
 
@@ -449,6 +483,19 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                       );
                     })}
                   </div>
+                </div>
+
+                {/* Auto-Derived Contract Frequency Display */}
+                <div className="p-2.5 rounded-nested bg-[#F0FDF4] border border-[#ADE4C1] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-[#00993F]" />
+                    <span className="text-[11px] font-bold text-[#00682B]">
+                      Derived Frequency: {getDerivedFrequency(formData.collectionDays.join(", "))} Service
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-[#00682B] font-mono font-bold bg-white/80 px-2 py-0.5 rounded-full border border-[#ADE4C1]">
+                    Auto-Computed
+                  </span>
                 </div>
 
                 <div>

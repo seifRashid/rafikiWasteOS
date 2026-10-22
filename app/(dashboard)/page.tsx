@@ -233,7 +233,7 @@ export default async function DashboardPage() {
                 </p>
               </div>
               <Link
-                href="/collections"
+                href="/operations/collections"
                 className="text-xs font-bold text-[#08A6BA] hover:text-[#068A9B] flex items-center gap-1"
               >
                 <span>Live Dispatch Board</span>

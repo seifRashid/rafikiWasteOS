@@ -24,6 +24,8 @@ import { StatCard } from "@/components/ui/stat-card";
 import { formatCurrency, formatWeight, formatDate, formatDateTime } from "@/lib/utils";
 
 import { ProvisionPortalModal } from "@/components/clients/provision-portal-modal";
+import { EditClientScheduleModal } from "@/components/operations/edit-client-schedule-modal";
+import { getDerivedFrequency } from "@/lib/schedule-utils";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -92,7 +94,7 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
           </Link>
 
           <Link
-            href="/collections"
+            href="/operations/collections"
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-nested bg-[#00993F] text-white text-xs font-bold shadow-sm hover:bg-[#008235] transition-all"
           >
             <Truck className="w-4 h-4" />
@@ -130,7 +132,7 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
         <StatCard
           title="Monthly Contract"
           value={formatCurrency(client.monthlyFee, "KES")}
-          subtitle={`Billed ${client.collectionFrequency.replace("_", " ")}`}
+          subtitle={`Billed ${getDerivedFrequency(client.collectionDays || client.collectionFrequency)}`}
           icon={<DollarSign className="w-5 h-5" />}
           accentColor="neutral"
         />
@@ -167,6 +169,25 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
               <div>
                 <span className="text-[#9CA3AF] block">Assigned Containers</span>
                 <span className="font-semibold text-slate-800">{client.binCount || "Standard 240L"}</span>
+              </div>
+              <div className="p-2.5 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[#4B5563] font-bold">Collection Schedule</span>
+                  <EditClientScheduleModal
+                    client={{
+                      id: client.id,
+                      name: client.name,
+                      collectionFrequency: client.collectionFrequency,
+                      collectionDays: client.collectionDays,
+                    }}
+                  />
+                </div>
+                <div className="font-semibold text-slate-900">
+                  {client.collectionDays || "Not Set"}
+                </div>
+                <div className="text-[11px] text-[#00993F] font-bold mt-0.5">
+                  ✨ {getDerivedFrequency(client.collectionDays || client.collectionFrequency)} Service
+                </div>
               </div>
               <div>
                 <span className="text-[#9CA3AF] block">Contract Term</span>

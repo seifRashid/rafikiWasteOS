@@ -17,7 +17,7 @@ import { db } from "@/server/db";
 import { collectionJobs, clients as clientsTable, vehicles as vehiclesTable } from "@/server/db/schema";
 import { eq, and, or, desc } from "drizzle-orm";
 import { formatDate, formatWeight } from "@/lib/utils";
-import { isClientCollectedOnDay } from "@/lib/schedule-utils";
+import { isClientCollectedOnDay, getDerivedFrequency } from "@/lib/schedule-utils";
 import { AssignTruckModal } from "@/components/operations/assign-truck-modal";
 import { EditClientScheduleModal } from "@/components/operations/edit-client-schedule-modal";
 
@@ -245,8 +245,8 @@ export default async function OperationsSchedulePage() {
                   <td className="py-3 px-4 capitalize">
                     <Badge variant="neutral">{c.customerType}</Badge>
                   </td>
-                  <td className="py-3 px-4 font-semibold text-[#00993F] capitalize">
-                    {c.collectionFrequency.replace("_", " ")}
+                  <td className="py-3 px-4 font-semibold text-[#00993F]">
+                    {getDerivedFrequency(c.collectionDays || c.collectionFrequency)}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex flex-wrap gap-1 max-w-xs">

@@ -19,7 +19,7 @@ export function MobileNav() {
 
   const links = [
     { name: "Command", href: "/", icon: LayoutDashboard },
-    { name: "Jobs", href: "/operations/jobs", icon: CheckSquare },
+    { name: "Collections", href: "/operations/collections", icon: CheckSquare },
     { name: "Routes", href: "/operations/routes", icon: MapPin, highlight: true },
     { name: "Clients", href: "/customers/clients", icon: Users },
   ];

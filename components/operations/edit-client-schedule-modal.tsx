@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import { Calendar, Clock, Check, X, Edit3 } from "lucide-react";
+import { Calendar, Check, X, Edit3, Sparkles } from "lucide-react";
 import { updateClientScheduleAction } from "@/server/actions/clients";
+import { getDerivedFrequency } from "@/lib/schedule-utils";
 
 interface EditClientScheduleModalProps {
   client: {
     id: string;
     name: string;
-    collectionFrequency: string;
+    collectionFrequency?: string;
     collectionDays: string | null;
   };
 }
@@ -18,7 +19,6 @@ const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 export function EditClientScheduleModal({ client }: EditClientScheduleModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [frequency, setFrequency] = useState<string>(client.collectionFrequency || "weekly");
   
   // Parse initial selected days
   const initialDays = client.collectionDays
@@ -43,18 +43,13 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
     }
   };
 
-  const handleFrequencyChange = (newFreq: string) => {
-    setFrequency(newFreq);
-    if (newFreq === "daily") {
-      setSelectedDays([...ALL_DAYS]);
-    } else if (newFreq === "twice_weekly" && selectedDays.length <= 1) {
-      setSelectedDays(["Tuesday", "Friday"]);
-    } else if (newFreq === "weekly" && selectedDays.length === 0) {
-      setSelectedDays(["Wednesday"]);
-    } else if (newFreq === "on_demand") {
-      setSelectedDays([]);
-    }
+  const applyPreset = (presetDays: string[]) => {
+    setSelectedDays(presetDays);
   };
+
+  const derivedFrequency = getDerivedFrequency(
+    selectedDays.length > 0 ? selectedDays.join(", ") : "On-Demand"
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,18 +57,12 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
     setNotice(null);
 
     const daysString =
-      frequency === "on_demand" && selectedDays.length === 0
+      selectedDays.length === 0
         ? "On-Demand"
-        : selectedDays.length > 0
-        ? selectedDays.join(", ")
-        : "Wednesday";
+        : selectedDays.join(", ");
 
     try {
-      const res = await updateClientScheduleAction(
-        client.id,
-        daysString,
-        frequency as any
-      );
+      const res = await updateClientScheduleAction(client.id, daysString);
 
       if (res.success) {
         setNotice("Schedule updated successfully!");
@@ -117,7 +106,7 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -131,24 +120,44 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
             )}
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4 text-xs">
+              {/* Quick Presets */}
               <div>
-                <label className="font-bold text-[#4B5563] block mb-1">
-                  Contract Service Frequency
+                <label className="font-bold text-[#4B5563] block mb-1.5">
+                  Quick Presets
                 </label>
-                <select
-                  value={frequency}
-                  onChange={(e) => handleFrequencyChange(e.target.value)}
-                  className="w-full p-2.5 rounded-nested border border-[#E3E9E5] bg-white text-slate-900 font-semibold focus:outline-none focus:border-[#00993F]"
-                >
-                  <option value="daily">Daily (Mon - Sat)</option>
-                  <option value="twice_weekly">Twice Weekly</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="bi_weekly">Bi-Weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="on_demand">On-Demand Request</option>
-                </select>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => applyPreset([...ALL_DAYS])}
+                    className="p-2 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                  >
+                    ⚡ Daily (Mon – Sat)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset(["Tuesday", "Friday"])}
+                    className="p-2 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                  >
+                    📅 Twice Wk (Tue, Fri)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset(["Wednesday"])}
+                    className="p-2 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                  >
+                    📌 Weekly (Wed)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset([])}
+                    className="p-2 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
+                  >
+                    🔔 On-Demand Only
+                  </button>
+                </div>
               </div>
 
+              {/* Day selection */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="font-bold text-[#4B5563]">
@@ -178,9 +187,24 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
                     );
                   })}
                 </div>
-                <p className="text-[10px] text-[#9CA3AF] mt-1.5">
-                  Collection manifests and daily dispatch stops are generated for the days selected above.
-                </p>
+              </div>
+
+              {/* Live Derived Billing & Contract Frequency */}
+              <div className="p-3 rounded-nested bg-[#F0FDF4] border border-[#ADE4C1] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#00993F]" />
+                  <div>
+                    <div className="text-[10px] text-[#00682B] uppercase font-bold tracking-wider">
+                      Derived Contract Frequency
+                    </div>
+                    <div className="text-xs font-extrabold text-[#00682B]">
+                      {derivedFrequency} Service
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] text-[#00682B] font-mono font-semibold bg-white/80 px-2 py-0.5 rounded-full border border-[#ADE4C1]">
+                  Auto-Calculated
+                </span>
               </div>
 
               <div className="pt-3 border-t border-[#F0F4F2] flex items-center justify-end gap-2">

@@ -77,7 +77,7 @@ export async function recordCollectionWeightAction(rawInput: unknown) {
       })
       .where(eq(collectionJobs.id, jobId));
 
-    revalidatePath("/collections");
+    revalidatePath("/operations/collections");
     revalidatePath("/inventory");
     revalidatePath("/impact");
     revalidatePath("/");
@@ -152,8 +152,7 @@ export async function updateJobStatusAction(rawInput: unknown) {
     try {
       revalidatePath("/operations/routes");
       revalidatePath("/operations/schedule");
-      revalidatePath("/operations/jobs");
-      revalidatePath("/collections");
+      revalidatePath("/operations/collections");
       revalidatePath("/routes");
       revalidatePath("/field");
       revalidatePath("/driver");
@@ -191,8 +190,7 @@ export async function reportMissedJobAction(rawInput: unknown) {
     try {
       revalidatePath("/operations/routes");
       revalidatePath("/operations/schedule");
-      revalidatePath("/operations/jobs");
-      revalidatePath("/collections");
+      revalidatePath("/operations/collections");
       revalidatePath("/routes");
       revalidatePath("/field");
       revalidatePath("/driver");
@@ -261,9 +259,8 @@ export async function createJobAction(rawInput: {
       })
       .returning();
 
-    revalidatePath("/operations/jobs");
+    revalidatePath("/operations/collections");
     revalidatePath("/operations/routes");
-    revalidatePath("/collections");
     revalidatePath("/routes");
     revalidatePath("/");
 
@@ -352,9 +349,8 @@ export async function assignJobTruckAction(rawInput: unknown) {
 
     // Revalidate operations and customer portals
     revalidatePath("/operations/schedule");
-    revalidatePath("/operations/jobs");
+    revalidatePath("/operations/collections");
     revalidatePath("/operations/routes");
-    revalidatePath("/collections");
     revalidatePath("/portal");
     revalidatePath("/portal/schedule");
     revalidatePath("/portal/collections");

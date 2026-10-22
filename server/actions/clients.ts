@@ -6,6 +6,7 @@ import { clients, customerTypeEnum, collectionFrequencyEnum } from "@/server/db/
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { syncDateOperations } from "./routes";
+import { getDerivedFrequencyEnum } from "@/lib/schedule-utils";
 
 const CreateClientSchema = z.object({
   name: z.string().min(2, "Client name is required"),
@@ -24,14 +25,9 @@ const CreateClientSchema = z.object({
   phone: z.string().min(6, "Valid phone number is required"),
   physicalAddress: z.string().min(3, "Physical address is required"),
   countyRegion: z.string().min(2, "County/Region is required"),
-  collectionFrequency: z.enum([
-    "daily",
-    "twice_weekly",
-    "weekly",
-    "bi_weekly",
-    "monthly",
-    "on_demand",
-  ]),
+  collectionFrequency: z
+    .enum(["daily", "twice_weekly", "weekly", "bi_weekly", "monthly", "on_demand"])
+    .optional(),
   collectionDays: z.string().optional(),
   wasteStreams: z.string().default("Organic, Recyclable"),
   binCount: z.string().default("2 x 240L Bins"),
@@ -80,6 +76,8 @@ export async function createClientAction(rawInput: unknown): Promise<ActionRespo
     const randomSeq = Math.floor(100 + Math.random() * 900);
     const accountNumber = `CLT-${prefix}-${randomSeq}`;
 
+    const derivedFrequency = collectionFrequency || getDerivedFrequencyEnum(collectionDays);
+
     const [newClient] = await db
       .insert(clients)
       .values({
@@ -91,7 +89,7 @@ export async function createClientAction(rawInput: unknown): Promise<ActionRespo
         phone,
         physicalAddress,
         countyRegion,
-        collectionFrequency,
+        collectionFrequency: derivedFrequency,
         collectionDays: collectionDays || null,
         wasteStreams,
         binCount,
@@ -139,18 +137,13 @@ export async function updateClientScheduleAction(
   collectionFrequency?: "daily" | "twice_weekly" | "weekly" | "bi_weekly" | "monthly" | "on_demand"
 ): Promise<ActionResponse> {
   try {
-    const updateData: {
-      collectionDays: string;
-      updatedAt: Date;
-      collectionFrequency?: "daily" | "twice_weekly" | "weekly" | "bi_weekly" | "monthly" | "on_demand";
-    } = {
+    const derivedFrequency = collectionFrequency || getDerivedFrequencyEnum(collectionDays);
+
+    const updateData = {
       collectionDays,
+      collectionFrequency: derivedFrequency,
       updatedAt: new Date(),
     };
-
-    if (collectionFrequency) {
-      updateData.collectionFrequency = collectionFrequency;
-    }
 
     await db
       .update(clients)
