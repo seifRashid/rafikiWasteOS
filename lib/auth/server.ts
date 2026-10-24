@@ -1,6 +1,6 @@
 import { createNeonAuth } from "@neondatabase/auth/next/server";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
+import { users, clients } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 
 export const auth = createNeonAuth({
@@ -37,6 +37,7 @@ export type FullUserProfile = {
   isAdmin: boolean;
   isApproved: boolean;
   isClient: boolean;
+  isClientActive?: boolean;
 };
 
 /**
@@ -60,9 +61,37 @@ export async function getCurrentUser(): Promise<FullUserProfile | null> {
 
     if (existing.length > 0) {
       const appUser = existing[0];
-      const isApproved = appUser.status === "active";
       const isAdmin = appUser.role === "super_admin";
       const isClient = appUser.role === "client_admin" || appUser.role === "client_user";
+
+      // If user is tied to a client organization, verify client active status
+      let isClientActive = true;
+      if (appUser.clientId) {
+        try {
+          const [clientOrg] = await db
+            .select({
+              isActive: clients.isActive,
+              isDeleted: clients.isDeleted,
+              contractEndDate: clients.contractEndDate,
+            })
+            .from(clients)
+            .where(eq(clients.id, appUser.clientId))
+            .limit(1);
+
+          if (clientOrg) {
+            const todayStr = new Date().toISOString().split("T")[0];
+            const isExpired = Boolean(clientOrg.contractEndDate && clientOrg.contractEndDate < todayStr);
+            isClientActive = Boolean(clientOrg.isActive && !clientOrg.isDeleted && !isExpired);
+          } else {
+            isClientActive = false;
+          }
+        } catch (e) {
+          console.warn("[getCurrentUser client lookup notice]:", e);
+        }
+      }
+
+      // An approved client user must have an active user status AND an active client organization
+      const isApproved = appUser.status === "active" && (!isClient || isClientActive);
 
       return {
         authUserId: authUser.id,
@@ -73,7 +102,7 @@ export async function getCurrentUser(): Promise<FullUserProfile | null> {
         phone: appUser.phone,
         role: appUser.role,
         roleTitle: appUser.roleTitle,
-        status: appUser.status,
+        status: !isClientActive ? "inactive" : appUser.status,
         depotLocation: appUser.depotLocation,
         assignedVehiclePlate: appUser.assignedVehiclePlate,
         avatarUrl: appUser.avatarUrl || authUser.image,
@@ -81,6 +110,7 @@ export async function getCurrentUser(): Promise<FullUserProfile | null> {
         isAdmin,
         isApproved,
         isClient,
+        isClientActive,
       };
     }
 

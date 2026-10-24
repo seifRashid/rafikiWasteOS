@@ -24,8 +24,12 @@ export default async function ClientPortalLayout({
     redirect("/pending-approval");
   }
 
-  if (user.status === "suspended" || user.status === "inactive") {
+  if (user.status === "suspended") {
     redirect("/login?error=suspended");
+  }
+
+  if (user.status === "inactive" || user.isClientActive === false) {
+    redirect("/login?error=deactivated");
   }
 
   let activeClientId = user.clientId;
@@ -68,14 +72,28 @@ export default async function ClientPortalLayout({
 
   const client = await getClientOrganization(activeClientId);
 
-  if (!client) {
+  if (!client || !client.isActive || client.isDeleted) {
     return (
       <div className="min-h-screen bg-[#F6F8F7] flex items-center justify-center p-4">
         <div className="bg-white rounded-card p-8 border border-[#E3E9E5] max-w-md w-full text-center space-y-4 shadow-card-elevated">
-          <h2 className="text-lg font-extrabold text-slate-900">Organization Record Not Found</h2>
-          <p className="text-xs text-[#4B5563]">
-            Unable to retrieve the organization record associated with your account.
+          <div className="w-14 h-14 rounded-full bg-[#FFF8D6] text-[#785608] flex items-center justify-center mx-auto text-2xl font-bold border border-[#FECA36]">
+            ⚠️
+          </div>
+          <h2 className="text-xl font-extrabold text-[#111827]">Client Account Deactivated</h2>
+          <p className="text-xs text-[#4B5563] leading-relaxed">
+            The account for <span className="font-semibold text-[#111827]">{client?.name || "this client organization"}</span> is currently deactivated. Access to scheduling pickups, viewing invoices, and live collection manifests has been restricted.
           </p>
+          <p className="text-[11px] text-[#6B7280]">
+            Please contact your Rafiki operations manager or account representative to restore access.
+          </p>
+          <div className="pt-2">
+            <a
+              href="/login?error=deactivated"
+              className="inline-block px-5 py-2.5 bg-[#00993F] text-white text-xs font-bold rounded-[14px] hover:bg-[#008235] transition-colors"
+            >
+              Return to Sign In
+            </a>
+          </div>
         </div>
       </div>
     );

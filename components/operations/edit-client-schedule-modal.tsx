@@ -28,9 +28,7 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
         .filter((d) => ALL_DAYS.includes(d as any))
     : client.collectionFrequency === "daily"
     ? [...ALL_DAYS]
-    : client.collectionFrequency === "twice_weekly"
-    ? ["Tuesday", "Friday"]
-    : ["Wednesday"];
+    : [];
 
   const [selectedDays, setSelectedDays] = useState<string[]>(initialDays);
   const [notice, setNotice] = useState<string | null>(null);
@@ -123,7 +121,7 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
               {/* Quick Presets */}
               <div>
                 <label className="font-bold text-[#4B5563] block mb-1.5">
-                  Quick Presets
+                  Quick Schedule Presets
                 </label>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
@@ -132,20 +130,6 @@ export function EditClientScheduleModal({ client }: EditClientScheduleModalProps
                     className="p-2 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
                   >
                     ⚡ Daily (Mon – Sat)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset(["Tuesday", "Friday"])}
-                    className="p-2 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
-                  >
-                    📅 Twice Wk (Tue, Fri)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset(["Wednesday"])}
-                    className="p-2 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
-                  >
-                    📌 Weekly (Wed)
                   </button>
                   <button
                     type="button"

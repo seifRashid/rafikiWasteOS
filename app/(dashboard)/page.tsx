@@ -62,29 +62,30 @@ export default async function DashboardPage() {
           title="Active Clients"
           value={`${data.activeClients || 7}`}
           subtitle={`${data.totalClients || 7} registered accounts`}
-          icon={<Users className="w-5 h-5" />}
+          icon={<Users className="w-5 h-5 text-slate-800" />}
           accentColor="primary"
           trend={{ value: "+100%", isPositive: true, label: "Contract retention" }}
         />
 
         <StatCard
           title="Collections Today"
-          value={`${data.completedTodayCount || 3}`}
+          value={`${data.completedTodayCount || 3} - ${data.totalJobsCount || 6}`}
           subtitle={`${data.totalJobsCount || 6} scheduled pickups`}
-          icon={<CheckSquare className="w-5 h-5" />}
-          accentColor="primary"
-        >
-          <span className="text-[11px] font-bold text-[#00993F]">
-            {data.totalJobsCount ? Math.round((data.completedTodayCount / data.totalJobsCount) * 100) : 50}% On Time
-          </span>
-        </StatCard>
+          icon={<CheckSquare className="w-5 h-5 text-slate-800" />}
+          accentColor="cyan"
+          trend={{
+            value: `${data.totalJobsCount ? Math.round((data.completedTodayCount / data.totalJobsCount) * 100) : 50}%`,
+            isPositive: true,
+            label: "On Time",
+          }}
+        />
 
         <StatCard
           title="Tonnage Collected"
           value={formatWeight(data.totalWeightCollectedKg || 4230, "auto")}
           subtitle={`${formatWeight(data.recoveredTonnageKg || 2890, "auto")} recovered`}
-          icon={<Scale className="w-5 h-5" />}
-          accentColor="cyan"
+          icon={<Scale className="w-5 h-5 text-slate-800" />}
+          accentColor="blue"
           trend={{ value: "+12.4%", isPositive: true, label: "vs last week" }}
         />
 
@@ -92,7 +93,7 @@ export default async function DashboardPage() {
           title="Diversion Rate"
           value={`${data.diversionRate || 68.4}%`}
           subtitle="Landfill diversion target: 65%"
-          icon={<Recycle className="w-5 h-5" />}
+          icon={<Recycle className="w-5 h-5 text-slate-800" />}
           accentColor="primary"
           trend={{ value: "+3.4%", isPositive: true, label: "Target achieved" }}
         />
@@ -104,32 +105,40 @@ export default async function DashboardPage() {
           title="Total Revenue (MTD)"
           value={formatCurrency(data.totalRevenue || 1840000, "KES", true)}
           subtitle="Fees + scrap sales"
-          icon={<DollarSign className="w-5 h-5" />}
+          icon={<DollarSign className="w-5 h-5 text-slate-800" />}
           accentColor="primary"
+          trend={{ value: "+18%", isPositive: true, label: "MoM Growth" }}
         />
 
         <StatCard
           title="Operating Expenses"
           value={formatCurrency(data.totalExpenses || 620000, "KES", true)}
           subtitle="Fuel, wages & parts"
-          icon={<TrendingDown className="w-5 h-5" />}
-          accentColor="neutral"
+          icon={<TrendingDown className="w-5 h-5 text-slate-800" />}
+          accentColor="purple"
+          trend={{ value: "-8%", isPositive: true, label: "Under budget" }}
         />
 
         <StatCard
           title="Outstanding Receivables"
           value={formatCurrency(data.outstandingDebt || 348000, "KES", true)}
           subtitle="4 invoices pending"
-          icon={<Clock className="w-5 h-5" />}
+          icon={<Clock className="w-5 h-5 text-slate-800" />}
           accentColor="amber"
+          trend={{ value: "-5%", isPositive: false, label: "Pending audit" }}
         />
 
         <StatCard
           title="Fleet Telemetry"
-          value={`${data.operatingVehiclesCount || 3} / ${data.totalVehiclesCount || 4}`}
+          value={`${data.operatingVehiclesCount || 3} - ${data.totalVehiclesCount || 4}`}
           subtitle="Vehicles operating today"
-          icon={<Truck className="w-5 h-5" />}
+          icon={<Truck className="w-5 h-5 text-slate-800" />}
           accentColor="cyan"
+          trend={{
+            value: `${Math.round(((data.operatingVehiclesCount || 3) / (data.totalVehiclesCount || 4)) * 100)}%`,
+            isPositive: true,
+            label: "Fleet active",
+          }}
         />
       </div>
 

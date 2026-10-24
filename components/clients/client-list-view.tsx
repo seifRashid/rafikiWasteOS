@@ -21,9 +21,11 @@ import {
   Utensils,
   Landmark,
   Sparkles,
+  AlertCircle,
+  Clock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { getDerivedFrequency } from "@/lib/schedule-utils";
 import { createClientAction } from "@/server/actions/clients";
 import type { Client } from "@/server/db/schema";
@@ -31,6 +33,21 @@ import type { Client } from "@/server/db/schema";
 interface ClientListViewProps {
   initialClients: Client[];
 }
+
+const getTodayDateString = () => new Date().toISOString().split("T")[0];
+const getFutureDateString = (monthsToAdd: number, fromDateStr?: string) => {
+  const base = fromDateStr ? new Date(fromDateStr) : new Date();
+  if (isNaN(base.getTime())) return "";
+  const d = new Date(base);
+  d.setMonth(d.getMonth() + monthsToAdd);
+  return d.toISOString().split("T")[0];
+};
+
+const isClientExpired = (client: Client) => {
+  if (!client.contractEndDate) return false;
+  const today = new Date().toISOString().split("T")[0];
+  return client.contractEndDate < today;
+};
 
 export function ClientListView({ initialClients }: ClientListViewProps) {
   const [clients, setClients] = useState<Client[]>(initialClients);
@@ -40,7 +57,10 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // New Client Form State
+  // New Client Form State with Contract Duration
+  const initialStartDate = getTodayDateString();
+  const initialEndDate = getFutureDateString(12, initialStartDate);
+
   const [formData, setFormData] = useState({
     name: "",
     customerType: "hotel",
@@ -53,7 +73,21 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
     wasteStreams: "Organic, Recyclable",
     binCount: "4 x 240L Wheeled Bins",
     monthlyFee: "35000",
+    contractStartDate: initialStartDate,
+    contractEndDate: initialEndDate,
   });
+
+  const isDateRangeInvalid = Boolean(
+    formData.contractStartDate &&
+    formData.contractEndDate &&
+    formData.contractEndDate < formData.contractStartDate
+  );
+
+  const setPresetDuration = (months: number) => {
+    const start = formData.contractStartDate || getTodayDateString();
+    const end = getFutureDateString(months, start);
+    setFormData((prev) => ({ ...prev, contractStartDate: start, contractEndDate: end }));
+  };
 
   const tiers = [
     { id: "all", label: "All Tiers", icon: Users },
@@ -77,6 +111,12 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isDateRangeInvalid) {
+      alert("Validation Error: Contract end date cannot be earlier than start date.");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await createClientAction({
@@ -91,6 +131,7 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
         setTimeout(() => {
           setSuccessMsg(null);
           setIsModalOpen(false);
+          const newStart = getTodayDateString();
           setFormData({
             name: "",
             customerType: "hotel",
@@ -103,6 +144,8 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
             wasteStreams: "Organic, Recyclable",
             binCount: "4 x 240L Wheeled Bins",
             monthlyFee: "35000",
+            contractStartDate: newStart,
+            contractEndDate: getFutureDateString(12, newStart),
           });
         }, 1200);
       } else {
@@ -193,17 +236,36 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                     {client.name}
                   </h3>
                 </div>
-                <Badge
-                  variant={
-                    client.customerType === "hotel"
-                      ? "amber"
-                      : client.customerType === "government"
-                      ? "cyan"
-                      : "neutral"
-                  }
-                >
-                  {client.customerType}
-                </Badge>
+                <div className="flex flex-col items-end gap-1.5">
+                  <Badge
+                    variant={
+                      client.customerType === "hotel"
+                        ? "amber"
+                        : client.customerType === "government"
+                        ? "cyan"
+                        : "neutral"
+                    }
+                  >
+                    {client.customerType}
+                  </Badge>
+
+                  {isClientExpired(client) ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      Contract Expired
+                    </span>
+                  ) : client.isActive ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EDF9F1] text-[#00682B] border border-[#ADE4C1]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#00993F]" />
+                      Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                      Deactivated
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Details List */}
@@ -227,6 +289,14 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                     </span>
                   )}
                 </div>
+                {client.contractStartDate && client.contractEndDate && (
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0" />
+                    <span className="font-medium text-slate-600 truncate">
+                      Term: {formatDate(client.contractStartDate)} &rarr; {formatDate(client.contractEndDate)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Waste stream & bin pill */}
@@ -393,6 +463,92 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                   />
                 </div>
 
+                {/* Contract Duration & Expiry */}
+                <div className="p-3 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-[#111827] flex items-center gap-1.5 text-xs">
+                      <Calendar className="w-3.5 h-3.5 text-[#00993F]" />
+                      Contract Duration &amp; Term *
+                    </label>
+                    <span className="text-[10px] text-[#4B5563] font-medium">Auto-deactivates upon expiry</span>
+                  </div>
+
+                  {/* Preset Duration Buttons */}
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF] block mb-1">
+                      Quick Term Presets
+                    </span>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setPresetDuration(3)}
+                        className="py-1 px-1.5 rounded-nested border border-[#E3E9E5] bg-white hover:bg-[#EDF9F1] hover:text-[#00993F] text-[11px] font-bold text-slate-700 text-center transition-colors cursor-pointer"
+                      >
+                        3 Mos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPresetDuration(6)}
+                        className="py-1 px-1.5 rounded-nested border border-[#E3E9E5] bg-white hover:bg-[#EDF9F1] hover:text-[#00993F] text-[11px] font-bold text-slate-700 text-center transition-colors cursor-pointer"
+                      >
+                        6 Mos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPresetDuration(12)}
+                        className="py-1 px-1.5 rounded-nested border border-[#ADE4C1] bg-[#EDF9F1] text-[#00682B] text-[11px] font-bold text-center transition-colors cursor-pointer"
+                      >
+                        1 Year ★
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPresetDuration(24)}
+                        className="py-1 px-1.5 rounded-nested border border-[#E3E9E5] bg-white hover:bg-[#EDF9F1] hover:text-[#00993F] text-[11px] font-bold text-slate-700 text-center transition-colors cursor-pointer"
+                      >
+                        2 Years
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-[#4B5563] block mb-1 text-[11px]">
+                        Start Date *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={formData.contractStartDate}
+                        onChange={(e) => setFormData({ ...formData, contractStartDate: e.target.value })}
+                        className="w-full p-2 rounded-nested border border-[#E3E9E5] bg-white text-xs focus:outline-none focus:border-[#00993F]"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-[#4B5563] block mb-1 text-[11px]">
+                        End Date (Expiry) *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={formData.contractEndDate}
+                        onChange={(e) => setFormData({ ...formData, contractEndDate: e.target.value })}
+                        className={`w-full p-2 rounded-nested border bg-white text-xs focus:outline-none ${
+                          isDateRangeInvalid
+                            ? "border-red-500 text-red-700 focus:border-red-500"
+                            : "border-[#E3E9E5] focus:border-[#00993F]"
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  {isDateRangeInvalid && (
+                    <div className="p-2 rounded-[8px] bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-500" />
+                      <span>Contract end date cannot be earlier than start date.</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Quick Presets */}
                 <div>
                   <label className="font-bold text-[#4B5563] block mb-1">
@@ -410,30 +566,6 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
                       className="p-1.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
                     >
                       ⚡ Daily (Mon – Sat)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFormData({
-                          ...formData,
-                          collectionDays: ["Tuesday", "Friday"],
-                        })
-                      }
-                      className="p-1.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
-                    >
-                      📅 Twice Wk (Tue, Fri)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFormData({
-                          ...formData,
-                          collectionDays: ["Wednesday"],
-                        })
-                      }
-                      className="p-1.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] hover:bg-[#EDF9F1] text-[11px] font-semibold text-slate-700 text-left transition-colors cursor-pointer"
-                    >
-                      📌 Weekly (Wed)
                     </button>
                     <button
                       type="button"

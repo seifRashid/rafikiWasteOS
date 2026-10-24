@@ -184,8 +184,10 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
     .from(clients)
     .where(and(eq(clients.isActive, true), eq(clients.isDeleted, false)));
 
-  // Determine which clients are contracted / due on this weekday
-  const dueClients = allActiveClients.filter((c) => isClientCollectedOnDay(c, weekday));
+  // Determine which clients are contracted / due on this weekday (strictly excluding expired contracts)
+  const dueClients = allActiveClients.filter(
+    (c) => (!c.contractEndDate || c.contractEndDate >= dateStr) && isClientCollectedOnDay(c, weekday)
+  );
 
   // 3. Fetch existing collection jobs for this target date (both active and soft-deleted)
   const allExistingJobs = await db

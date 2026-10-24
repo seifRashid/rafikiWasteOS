@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth/client";
@@ -70,6 +72,18 @@ export function ClientPortalShell({
       href: "/portal/schedule",
       icon: Calendar,
       active: pathname.startsWith("/portal/schedule"),
+    },
+    {
+      name: "Service Requests",
+      href: "/portal/requests",
+      icon: MessageSquare,
+      active: pathname.startsWith("/portal/requests"),
+    },
+    {
+      name: "Complaints & Issues",
+      href: "/portal/complaints",
+      icon: AlertTriangle,
+      active: pathname.startsWith("/portal/complaints"),
     },
     {
       name: "Invoices & Billing",

@@ -26,6 +26,7 @@ import {
   type DispatchSetting,
 } from "./schema";
 import { eq, desc, and } from "drizzle-orm";
+import { deactivateExpiredContractsService } from "@/server/services/contract-expiration";
 
 // Fallback initial dataset for zero-crash resilience
 const fallbackClients: Client[] = [
@@ -420,6 +421,12 @@ export async function getDashboardData() {
 
 export async function getClientsWithStats() {
   try {
+    try {
+      await deactivateExpiredContractsService();
+    } catch (e) {
+      console.warn("[getClientsWithStats] expiration sync notice:", e);
+    }
+
     const allClients = await db
       .select()
       .from(clients)
@@ -436,7 +443,17 @@ export async function getClientsWithStats() {
 
 export async function getClientProfile(clientId: string) {
   try {
-    const [client] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
+    try {
+      await deactivateExpiredContractsService();
+    } catch (e) {
+      console.warn("[getClientProfile] expiration sync notice:", e);
+    }
+
+    const [client] = await db
+      .select()
+      .from(clients)
+      .where(and(eq(clients.id, clientId), eq(clients.isDeleted, false)))
+      .limit(1);
     if (client) {
       const clientJobs = await db
         .select()

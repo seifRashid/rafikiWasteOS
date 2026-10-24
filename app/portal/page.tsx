@@ -19,6 +19,8 @@ import {
   MapPin,
   Leaf,
   Layers,
+  MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -105,6 +107,36 @@ export default async function ClientPortalDashboardPage() {
             buttonLabel="+ Request Pickup"
             variant="primary"
           />
+        </div>
+      </div>
+
+      {/* Quick Customer Support & Issue Reporting Banner */}
+      <div className="bg-white rounded-card p-4 sm:p-5 border border-[#E3E9E5] shadow-card-hoverable flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-[#EDF9F1] text-[#00993F] flex items-center justify-center shrink-0 border border-[#ADE4C1]">
+            <MessageSquare className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-900 text-sm">Customer Requests &amp; Issue Resolution</h4>
+            <p className="text-xs text-[#4B5563] mt-0.5">
+              Submit extra bin requests, book bulk clearances, or report missed pickups directly to operations dispatch.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href="/portal/requests"
+            className="px-3.5 py-2 rounded-nested bg-[#00993F] hover:bg-[#008235] text-white text-xs font-bold transition-all shadow-xs"
+          >
+            Service Requests &rarr;
+          </Link>
+          <Link
+            href="/portal/complaints"
+            className="px-3.5 py-2 rounded-nested bg-white hover:bg-red-50 text-red-600 border border-red-200 text-xs font-bold transition-all"
+          >
+            Report an Issue
+          </Link>
         </div>
       </div>
 

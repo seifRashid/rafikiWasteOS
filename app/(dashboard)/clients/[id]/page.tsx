@@ -17,6 +17,7 @@ import {
   Truck,
   Leaf,
   Layers,
+  AlertCircle,
 } from "lucide-react";
 import { getClientProfile } from "@/server/db/queries";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import { formatCurrency, formatWeight, formatDate, formatDateTime } from "@/lib/
 
 import { ProvisionPortalModal } from "@/components/clients/provision-portal-modal";
 import { EditClientScheduleModal } from "@/components/operations/edit-client-schedule-modal";
+import { ClientLifecycleActions } from "@/components/clients/client-lifecycle-actions";
 import { getDerivedFrequency } from "@/lib/schedule-utils";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
@@ -51,6 +53,8 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
   }
 
   const { client, jobs, invoices, stats } = profile;
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isContractExpired = Boolean(client.contractEndDate && client.contractEndDate < todayStr);
 
   return (
     <div className="space-y-6">
@@ -69,6 +73,19 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
                 {client.accountNumber}
               </span>
               <Badge variant="primary">{client.customerType}</Badge>
+              {isContractExpired ? (
+                <Badge variant="amber" dot>
+                  Contract Expired
+                </Badge>
+              ) : client.isActive ? (
+                <Badge variant="primary" dot>
+                  Active
+                </Badge>
+              ) : (
+                <Badge variant="danger" dot>
+                  Deactivated
+                </Badge>
+              )}
             </div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1">
               {client.name}
@@ -77,6 +94,19 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Deactivate and Delete actions */}
+          <ClientLifecycleActions
+            client={{
+              id: client.id,
+              name: client.name,
+              accountNumber: client.accountNumber,
+              isActive: client.isActive,
+            }}
+            portalUsersCount={clientUsers.length}
+            jobsCount={jobs.length}
+            invoicesCount={invoices.length}
+          />
+
           <ProvisionPortalModal
             clientId={client.id}
             clientName={client.name}
@@ -102,6 +132,28 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
           </Link>
         </div>
       </div>
+
+      {/* Deactivated / Expired Notice Banner */}
+      {(!client.isActive || isContractExpired) && (
+        <div className="p-3.5 rounded-nested bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              {isContractExpired ? (
+                <>
+                  <strong>Contract Expired:</strong> This client contract ended on{" "}
+                  <strong>{formatDate(client.contractEndDate)}</strong> and has been automatically deactivated.
+                  Portal logins and routine pickups are restricted. All historical weight records and invoices remain preserved.
+                </>
+              ) : (
+                <>
+                  <strong>Client Account Deactivated:</strong> This account is currently suspended. Portal logins are blocked and routine stops are excluded from daily dispatch manifests. All historical weight records and invoices remain preserved.
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* 4 KPI Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -191,9 +243,16 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
               </div>
               <div>
                 <span className="text-[#9CA3AF] block">Contract Term</span>
-                <span className="font-semibold text-slate-800">
-                  {formatDate(client.contractStartDate)} — {formatDate(client.contractEndDate)}
-                </span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-semibold text-slate-800">
+                    {formatDate(client.contractStartDate)} — {formatDate(client.contractEndDate)}
+                  </span>
+                  {isContractExpired && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                      Expired
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

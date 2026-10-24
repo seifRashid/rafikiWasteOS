@@ -27,8 +27,8 @@ export async function updateClientProfileSelfAction(
 ): Promise<ActionResponse> {
   try {
     const currentUser = await getCurrentUser();
-    if (!currentUser || !currentUser.isClient || !currentUser.clientId) {
-      return { success: false, error: "Unauthorized access to client profile." };
+    if (!currentUser || !currentUser.isClient || !currentUser.clientId || currentUser.isClientActive === false) {
+      return { success: false, error: "Unauthorized access: Client account is deactivated or inactive." };
     }
 
     const parsed = UpdateClientProfileSchema.safeParse(rawInput);
@@ -214,6 +214,20 @@ export async function requestExtraPickupAction(
 
     if (!activeClientId) {
       return { success: false, error: "No client organization associated with account." };
+    }
+
+    // Verify client organization is active and not deleted
+    const [clientRecord] = await db
+      .select({ id: clients.id, isActive: clients.isActive, isDeleted: clients.isDeleted })
+      .from(clients)
+      .where(eq(clients.id, activeClientId))
+      .limit(1);
+
+    if (!clientRecord || !clientRecord.isActive || clientRecord.isDeleted) {
+      return {
+        success: false,
+        error: "Your client account is currently deactivated. Collection pickup requests are disabled. Please contact support.",
+      };
     }
 
     const parsed = RequestExtraPickupSchema.safeParse(rawInput);

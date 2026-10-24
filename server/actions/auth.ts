@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
+import { users, clients } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/server";
 import { revalidatePath } from "next/cache";
@@ -261,18 +261,43 @@ export async function checkApprovalStatusAction(): Promise<{
   role?: string;
   email?: string;
   fullName?: string;
+  isClient?: boolean;
+  isClientActive?: boolean;
+  isApproved?: boolean;
+  clientName?: string;
 }> {
   try {
     const user = await getCurrentUser();
     if (!user) {
       return { authenticated: false };
     }
+
+    let clientName: string | undefined = undefined;
+    if (user.clientId) {
+      try {
+        const [clientRecord] = await db
+          .select({ name: clients.name })
+          .from(clients)
+          .where(eq(clients.id, user.clientId))
+          .limit(1);
+        if (clientRecord) {
+          clientName = clientRecord.name;
+        }
+      } catch (err) {
+        console.warn("[checkApprovalStatusAction] clientName lookup:", err);
+      }
+    }
+
     return {
       authenticated: true,
       status: user.status,
       role: user.role,
       email: user.email,
       fullName: user.fullName,
+      isClient: user.isClient,
+      isClientActive: user.isClientActive,
+      isApproved: user.isApproved,
+      clientName,
     };
   } catch (error) {
     console.error("[checkApprovalStatusAction Error]:", error);

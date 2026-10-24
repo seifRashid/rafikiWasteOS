@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 import { checkApprovalStatusAction } from "@/server/actions/auth";
 import {
@@ -19,13 +19,25 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const errorParam = searchParams.get("error");
+    if (errorParam === "deactivated") {
+      setError("Your client account is currently deactivated. Access to the client portal has been restricted. Please contact your operations manager.");
+      authClient.signOut().catch(() => {});
+    } else if (errorParam === "suspended") {
+      setError("Your account is currently suspended. Please contact your operations supervisor.");
+      authClient.signOut().catch(() => {});
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,16 +59,36 @@ export default function LoginPage() {
       // Check if user account is approved or pending
       const statusRes = await checkApprovalStatusAction();
 
-      if (statusRes.authenticated && statusRes.status === "pending_approval") {
+      if (!statusRes.authenticated) {
+        setError("Session initialization failed. Please retry.");
+        setLoading(false);
+        return;
+      }
+
+      // Check if user is a client account whose organization is deactivated or inactive
+      if (statusRes.isClient || statusRes.role === "client_admin" || statusRes.role === "client_user") {
+        if (statusRes.isClientActive === false || statusRes.status === "inactive" || statusRes.status === "suspended") {
+          const clientOrgName = statusRes.clientName ? ` (${statusRes.clientName})` : "";
+          setError(
+            `Your client account${clientOrgName} is currently deactivated. Access to the client portal has been restricted. Please contact your operations manager.`
+          );
+          await authClient.signOut();
+          setLoading(false);
+          return;
+        }
+
+        router.push("/portal");
+        router.refresh();
+        return;
+      }
+
+      if (statusRes.status === "pending_approval") {
         router.push("/pending-approval");
-      } else if (statusRes.authenticated && statusRes.status === "suspended") {
+      } else if (statusRes.status === "suspended" || statusRes.status === "inactive") {
         setError("Your account is currently suspended. Please contact your operations supervisor.");
         await authClient.signOut();
         setLoading(false);
         return;
-      } else if (statusRes.authenticated && (statusRes.role === "client_admin" || statusRes.role === "client_user")) {
-        router.push("/portal");
-        router.refresh();
       } else {
         router.push("/");
         router.refresh();
@@ -255,10 +287,24 @@ export default function LoginPage() {
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#08A6BA] hover:text-[#068A9B] hover:underline"
           >
             <Shield className="w-3.5 h-3.5" />
-            <span>Are you a System Administrator? Sign in here &rarr;</span>
-          </Link>
+              <span>Are you a System Administrator? Sign in here &rarr;</span>
+            </Link>
+          </div>
         </div>
       </div>
-    </div>
+    );
+  }
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="bg-white rounded-card border border-[#E3E9E5] p-8 text-center text-xs text-[#6B7280]">
+          Loading portal...
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
