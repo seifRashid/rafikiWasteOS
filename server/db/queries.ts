@@ -12,6 +12,7 @@ import {
   users,
   roles,
   dispatchSettings,
+  wasteMaterials,
   type Client,
   type CollectionJob,
   type Route,
@@ -24,6 +25,7 @@ import {
   type SystemUser,
   type SystemRole,
   type DispatchSetting,
+  type WasteMaterial,
 } from "./schema";
 import { eq, desc, and } from "drizzle-orm";
 import { deactivateExpiredContractsService } from "@/server/services/contract-expiration";
@@ -1359,6 +1361,101 @@ export async function getSystemRoles() {
     // Return resilient fallback mock dataset
   }
   return fallbackRoles;
+}
+
+const fallbackWasteMaterials: WasteMaterial[] = [
+  {
+    id: "mat-01",
+    code: "PET-CLR",
+    name: "PET Clear Bottles",
+    category: "Rigid Plastic",
+    benchmarkPrice: "38.50",
+    baleDensity: "220 - 250 kg/bale",
+    acceptable: "Clear water and beverage bottles, sorted caps",
+    rejects: "Opaque bottles, motor oil containers, PVC labels",
+    isVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    isDeleted: false,
+    deletedAt: null,
+  },
+  {
+    id: "mat-02",
+    code: "HDP-RGD",
+    name: "HDPE Blow Moulding",
+    category: "Rigid Plastic",
+    benchmarkPrice: "44.00",
+    baleDensity: "180 - 220 kg/bale",
+    acceptable: "Milk jugs, shampoo/detergent containers, chemical drums",
+    rejects: "Heavy grease contamination, PP bucket lids",
+    isVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    isDeleted: false,
+    deletedAt: null,
+  },
+  {
+    id: "mat-03",
+    code: "OCC-CRD",
+    name: "Cardboard (OCC Bales)",
+    category: "Paper & Fibre",
+    benchmarkPrice: "14.50",
+    baleDensity: "350 - 450 kg/bale",
+    acceptable: "Corrugated shipping boxes, clean industrial cartons",
+    rejects: "Waxed produce boxes, wet soggy cardboard",
+    isVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    isDeleted: false,
+    deletedAt: null,
+  },
+  {
+    id: "mat-04",
+    code: "ALU-UBC",
+    name: "Aluminium Beverage Cans",
+    category: "Non-Ferrous Metal",
+    benchmarkPrice: "165.00",
+    baleDensity: "120 - 150 kg briquettes",
+    acceptable: "All soda and beverage cans, clean tin-free",
+    rejects: "Aerosol cans, steel food cans",
+    isVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    isDeleted: false,
+    deletedAt: null,
+  },
+  {
+    id: "mat-05",
+    code: "ORG-CMP",
+    name: "Organic Composting Biomass",
+    category: "Organic Waste",
+    benchmarkPrice: "12.00",
+    baleDensity: "Bulk Windrow (kg/m³)",
+    acceptable: "Vegetable scraps, fruit rinds, coffee grounds, garden clippings",
+    rejects: "Meat/bones (vermin risk), plastic bags, glass shards",
+    isVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    isDeleted: false,
+    deletedAt: null,
+  },
+];
+
+export async function getWasteMaterials() {
+  try {
+    const list = await db
+      .select()
+      .from(wasteMaterials)
+      .where(eq(wasteMaterials.isDeleted, false))
+      .orderBy(wasteMaterials.createdAt);
+
+    if (list && list.length > 0) {
+      return list;
+    }
+  } catch (error) {
+    console.warn("[DB_QUERY_FALLBACK: getWasteMaterials]", error);
+  }
+  return fallbackWasteMaterials;
 }
 
 export { getDriverPortalData, type DriverPortalData, type DriverStop } from "./driver-queries";

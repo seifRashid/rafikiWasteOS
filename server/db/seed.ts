@@ -28,6 +28,7 @@ export async function seedDatabase() {
   await db.delete(schema.vehicles);
   await db.delete(schema.clients);
   await db.delete(schema.projects);
+  await db.delete(schema.wasteMaterials);
 
   // 2. Insert Fleet Vehicles
   console.log("Inserting fleet vehicles...");
@@ -615,6 +616,60 @@ export async function seedDatabase() {
       description: "Heavy-duty puncture-resistant gloves (40 pairs) and safety boots for field crew",
       expenseDate: "2026-09-10",
       paidTo: "Safety Supplies East Africa",
+    },
+  ]);
+
+  console.log("Inserting waste materials & grade specifications...");
+  await db.insert(schema.wasteMaterials).values([
+    {
+      code: "PET-CLR",
+      name: "PET Clear Bottles",
+      category: "Rigid Plastic",
+      benchmarkPrice: "38.50",
+      baleDensity: "220 - 250 kg/bale",
+      acceptable: "Clear water and beverage bottles, sorted caps",
+      rejects: "Opaque bottles, motor oil containers, PVC labels",
+      isVerified: true,
+    },
+    {
+      code: "HDP-RGD",
+      name: "HDPE Blow Moulding",
+      category: "Rigid Plastic",
+      benchmarkPrice: "44.00",
+      baleDensity: "180 - 220 kg/bale",
+      acceptable: "Milk jugs, shampoo/detergent containers, chemical drums",
+      rejects: "Heavy grease contamination, PP bucket lids",
+      isVerified: true,
+    },
+    {
+      code: "OCC-CRD",
+      name: "Cardboard (OCC Bales)",
+      category: "Paper & Fibre",
+      benchmarkPrice: "14.50",
+      baleDensity: "350 - 450 kg/bale",
+      acceptable: "Corrugated shipping boxes, clean industrial cartons",
+      rejects: "Waxed produce boxes, wet soggy cardboard",
+      isVerified: true,
+    },
+    {
+      code: "ALU-UBC",
+      name: "Aluminium Beverage Cans",
+      category: "Non-Ferrous Metal",
+      benchmarkPrice: "165.00",
+      baleDensity: "120 - 150 kg briquettes",
+      acceptable: "All soda and beverage cans, clean tin-free",
+      rejects: "Aerosol cans, steel food cans",
+      isVerified: true,
+    },
+    {
+      code: "ORG-CMP",
+      name: "Organic Composting Biomass",
+      category: "Organic Waste",
+      benchmarkPrice: "12.00",
+      baleDensity: "Bulk Windrow (kg/m³)",
+      acceptable: "Vegetable scraps, fruit rinds, coffee grounds, garden clippings",
+      rejects: "Meat/bones (vermin risk), plastic bags, glass shards",
+      isVerified: true,
     },
   ]);
 
