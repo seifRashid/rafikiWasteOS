@@ -21,13 +21,16 @@ import {
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { QuickActions } from "@/components/dashboard/quick-actions";
-import { getDashboardData } from "@/server/db/queries";
+import { getDashboardData, getWasteMaterials } from "@/server/db/queries";
 import { formatCurrency, formatWeight, formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const data = await getDashboardData();
+  const [data, materialsList] = await Promise.all([
+    getDashboardData(),
+    getWasteMaterials(),
+  ]);
 
   // Client dropdown items for quick modal
   const clientsList = data.recentJobs.map((j) => ({
@@ -53,7 +56,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <QuickActions clientsList={clientsList} />
+        <QuickActions clientsList={clientsList} materialsList={materialsList} />
       </div>
 
       {/* Primary KPI Cards Grid (4 columns) */}

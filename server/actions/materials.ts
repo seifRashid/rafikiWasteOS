@@ -30,6 +30,9 @@ const CreateMaterialSchema = z.object({
     .min(2, "Category is required")
     .max(64, "Category must be 64 characters or less")
     .transform((val) => val.trim()),
+  wasteStream: z
+    .enum(["organic", "recyclable", "residual", "hazardous", "electronic"])
+    .default("recyclable"),
   benchmarkPrice: z.coerce.number().positive("Benchmark scrap price must be a positive number"),
   baleDensity: z
     .string()
@@ -64,6 +67,9 @@ const UpdateMaterialSchema = z.object({
     .min(2, "Category is required")
     .max(64, "Category must be 64 characters or less")
     .transform((val) => val.trim()),
+  wasteStream: z
+    .enum(["organic", "recyclable", "residual", "hazardous", "electronic"])
+    .default("recyclable"),
   benchmarkPrice: z.coerce.number().positive("Benchmark scrap price must be a positive number"),
   baleDensity: z
     .string()
@@ -110,6 +116,7 @@ export async function createMaterialAction(rawInput: unknown) {
         code: data.code,
         name: data.name,
         category: data.category,
+        wasteStream: data.wasteStream,
         benchmarkPrice: data.benchmarkPrice.toFixed(2),
         baleDensity: data.baleDensity,
         acceptable: data.acceptable,
@@ -121,6 +128,7 @@ export async function createMaterialAction(rawInput: unknown) {
     safeRevalidatePath("/waste/materials");
     safeRevalidatePath("/waste");
     safeRevalidatePath("/inventory");
+    safeRevalidatePath("/settings/waste-types");
 
     return { success: true, data: created };
   } catch (error) {
@@ -167,6 +175,7 @@ export async function updateMaterialAction(rawInput: unknown) {
         code: data.code,
         name: data.name,
         category: data.category,
+        wasteStream: data.wasteStream,
         benchmarkPrice: data.benchmarkPrice.toFixed(2),
         baleDensity: data.baleDensity,
         acceptable: data.acceptable,
@@ -184,6 +193,7 @@ export async function updateMaterialAction(rawInput: unknown) {
     safeRevalidatePath("/waste/materials");
     safeRevalidatePath("/waste");
     safeRevalidatePath("/inventory");
+    safeRevalidatePath("/settings/waste-types");
 
     return { success: true, data: updated };
   } catch (error) {

@@ -36,7 +36,7 @@ export const materialTypeEnum = pgEnum("material_type", [
 export const recyclableInventory = pgTable("recyclable_inventory", {
   id: uuid("id").defaultRandom().primaryKey(),
   batchNumber: varchar("batch_number", { length: 32 }).unique().notNull(), // e.g. BAT-PET-2026-089
-  materialType: materialTypeEnum("material_type").notNull(),
+  materialType: varchar("material_type", { length: 64 }).notNull(), // e.g. PET-CLR, HDP-RGD, custom material code or stream
   gradeQuality: varchar("grade_quality", { length: 32 }).default("Standard").notNull(), // Grade A (Clear), Grade B, Baled, Flaked
   collectedWeightKg: decimal("collected_weight_kg", { precision: 10, scale: 2 }).notNull(),
   sortedWeightKg: decimal("sorted_weight_kg", { precision: 10, scale: 2 }),

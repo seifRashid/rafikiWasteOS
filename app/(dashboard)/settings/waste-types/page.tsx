@@ -1,9 +1,12 @@
 import React from "react";
 import { WasteTypesView } from "@/components/settings/waste-types-view";
+import { getWasteMaterials } from "@/server/db/queries";
 
 export const dynamic = "force-dynamic";
 
-export default function SettingsWasteTypesPage() {
+export default async function SettingsWasteTypesPage() {
+  const materials = await getWasteMaterials();
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
@@ -16,7 +19,7 @@ export default function SettingsWasteTypesPage() {
         </div>
       </div>
 
-      <WasteTypesView />
+      <WasteTypesView initialMaterials={materials} />
     </div>
   );
 }

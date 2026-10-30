@@ -62,7 +62,7 @@ export async function deactivateExpiredContractsService(): Promise<DeactivationR
         .set({
           isActive: false,
           updatedAt: now,
-          notes: sql`CONCAT(COALESCE(notes, ''), ' [Auto-deactivated: Contract expired on ', ${client.contractEndDate}, ']')`,
+          notes: sql`CONCAT(COALESCE(${clients.notes}, ''), ' [Auto-deactivated: Contract expired on ', ${client.contractEndDate}::text, ']')`,
         })
         .where(eq(clients.id, client.id));
 

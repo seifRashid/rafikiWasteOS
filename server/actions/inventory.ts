@@ -6,20 +6,16 @@ import { recyclableInventory, materialStageEnum, materialTypeEnum } from "@/serv
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
+function safeRevalidatePath(path: string) {
+  try {
+    revalidatePath(path);
+  } catch {
+    // No-op outside Next.js request context
+  }
+}
+
 const RecordIntakeSchema = z.object({
-  materialType: z.enum([
-    "pet_plastic",
-    "hdpe_plastic",
-    "ldpe_film",
-    "pp_polypropylene",
-    "cardboard_occ",
-    "mixed_paper",
-    "aluminium_cans",
-    "steel_scrap",
-    "glass_cullet",
-    "organic_compost",
-    "electronic_waste",
-  ]),
+  materialType: z.string().min(1, "Material stream is required"),
   gradeQuality: z.string().default("Standard"),
   collectedWeightKg: z.number().positive("Collected weight must be positive"),
   storageBay: z.string().min(2, "Storage bay location is required"),
@@ -43,8 +39,11 @@ export async function recordMaterialIntakeAction(rawInput: unknown) {
 
     const { materialType, gradeQuality, collectedWeightKg, storageBay, notes } = parsed.data;
 
-    const shortCode = materialType.substring(0, 3).toUpperCase();
-    const batchNumber = `BAT-${shortCode}-${Date.now().toString().slice(-4)}`;
+    // Generate clean 3-character prefix for batch code (e.g. PET from PET-CLR, OCC from OCC-CRD)
+    const cleanPrefix = materialType.includes("-")
+      ? materialType.split("-")[0].toUpperCase()
+      : materialType.replace(/[^A-Za-z0-9]/g, "").substring(0, 3).toUpperCase() || "MAT";
+    const batchNumber = `BAT-${cleanPrefix}-${Date.now().toString().slice(-4)}`;
 
     const [batch] = await db
       .insert(recyclableInventory)
@@ -60,9 +59,10 @@ export async function recordMaterialIntakeAction(rawInput: unknown) {
       })
       .returning();
 
-    revalidatePath("/inventory");
-    revalidatePath("/impact");
-    revalidatePath("/");
+    safeRevalidatePath("/inventory");
+    safeRevalidatePath("/waste/inventory");
+    safeRevalidatePath("/impact");
+    safeRevalidatePath("/");
 
     return { success: true, data: batch };
   } catch (error) {
@@ -93,9 +93,10 @@ export async function updateMaterialStageAction(
 
     await db.update(recyclableInventory).set(updateData).where(eq(recyclableInventory.id, batchId));
 
-    revalidatePath("/inventory");
-    revalidatePath("/impact");
-    revalidatePath("/");
+    safeRevalidatePath("/inventory");
+    safeRevalidatePath("/waste/inventory");
+    safeRevalidatePath("/impact");
+    safeRevalidatePath("/");
 
     return { success: true };
   } catch (error) {
@@ -127,10 +128,11 @@ export async function recordMaterialSaleAction(rawInput: unknown) {
       })
       .where(eq(recyclableInventory.id, batchId));
 
-    revalidatePath("/inventory");
-    revalidatePath("/finance");
-    revalidatePath("/impact");
-    revalidatePath("/");
+    safeRevalidatePath("/inventory");
+    safeRevalidatePath("/waste/inventory");
+    safeRevalidatePath("/finance");
+    safeRevalidatePath("/impact");
+    safeRevalidatePath("/");
 
     return { success: true, totalRevenue };
   } catch (error) {

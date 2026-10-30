@@ -19,6 +19,7 @@ interface MaterialFormData {
   code: string;
   name: string;
   category: string;
+  wasteStream: "organic" | "recyclable" | "residual" | "hazardous" | "electronic";
   benchmarkPrice: string;
   baleDensity: string;
   acceptable: string;
@@ -30,6 +31,7 @@ const emptyForm: MaterialFormData = {
   code: "",
   name: "",
   category: "Rigid Plastic",
+  wasteStream: "recyclable",
   benchmarkPrice: "",
   baleDensity: "",
   acceptable: "",
@@ -78,6 +80,7 @@ export function MaterialsView({ initialMaterials }: MaterialsViewProps) {
       code: material.code,
       name: material.name,
       category: material.category,
+      wasteStream: (material.wasteStream as any) || "recyclable",
       benchmarkPrice: material.benchmarkPrice.toString(),
       baleDensity: material.baleDensity,
       acceptable: material.acceptable,
@@ -112,6 +115,7 @@ export function MaterialsView({ initialMaterials }: MaterialsViewProps) {
           code: formData.code,
           name: formData.name,
           category: formData.category,
+          wasteStream: formData.wasteStream,
           benchmarkPrice: priceNum,
           baleDensity: formData.baleDensity,
           acceptable: formData.acceptable,
@@ -139,6 +143,7 @@ export function MaterialsView({ initialMaterials }: MaterialsViewProps) {
           code: formData.code,
           name: formData.name,
           category: formData.category,
+          wasteStream: formData.wasteStream,
           benchmarkPrice: priceNum,
           baleDensity: formData.baleDensity,
           acceptable: formData.acceptable,
@@ -215,7 +220,10 @@ export function MaterialsView({ initialMaterials }: MaterialsViewProps) {
                   {m.code}
                 </span>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border border-[#ADE4C1] bg-[#EDF9F1] text-[#00682B]">
+                    {m.wasteStream || "recyclable"}
+                  </span>
                   <Badge variant="neutral">{m.category}</Badge>
                   <button
                     onClick={() => openEditModal(m)}
@@ -341,6 +349,31 @@ export function MaterialsView({ initialMaterials }: MaterialsViewProps) {
                     ))}
                   </datalist>
                 </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Operational Waste Stream <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.wasteStream}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      wasteStream: e.target.value as any,
+                    }))
+                  }
+                  className="w-full text-xs p-2.5 rounded-nested border border-[#E3E9E5] bg-white focus:outline-none focus:border-[#00993F]"
+                >
+                  <option value="recyclable">Recyclable (Dry recoverable commodities)</option>
+                  <option value="organic">Organic (Food & green biomass)</option>
+                  <option value="residual">Residual (Non-recyclable general waste)</option>
+                  <option value="hazardous">Hazardous (Special handling / regulated)</option>
+                  <option value="electronic">Electronic (WEEE / e-waste)</option>
+                </select>
+                <span className="text-[10px] text-[#9CA3AF]">
+                  Maps this material grade to the collection job and reporting waste stream
+                </span>
               </div>
 
               <div>

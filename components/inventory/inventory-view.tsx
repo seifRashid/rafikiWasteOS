@@ -25,14 +25,16 @@ import {
   updateMaterialStageAction,
   recordMaterialSaleAction,
 } from "@/server/actions/inventory";
-import type { RecyclableInventory } from "@/server/db/schema";
+import type { RecyclableInventory, WasteMaterial } from "@/server/db/schema";
 
 interface InventoryViewProps {
   initialBatches: RecyclableInventory[];
+  initialMaterials?: WasteMaterial[];
 }
 
-export function InventoryView({ initialBatches }: InventoryViewProps) {
+export function InventoryView({ initialBatches, initialMaterials = [] }: InventoryViewProps) {
   const [batches, setBatches] = useState<RecyclableInventory[]>(initialBatches);
+  const [materials] = useState<WasteMaterial[]>(initialMaterials);
   const [selectedStage, setSelectedStage] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -44,11 +46,16 @@ export function InventoryView({ initialBatches }: InventoryViewProps) {
   const [saleLoading, setSaleLoading] = useState(false);
 
   // Intake Modal State
+  const defaultMaterial = initialMaterials[0];
   const [isIntakeOpen, setIsIntakeOpen] = useState(false);
-  const [materialType, setMaterialType] = useState<any>("pet_plastic");
-  const [gradeQuality, setGradeQuality] = useState("Grade A (Clear)");
+  const [materialType, setMaterialType] = useState<string>(defaultMaterial?.code || "PET-CLR");
+  const [gradeQuality, setGradeQuality] = useState(
+    defaultMaterial?.baleDensity ? `Baled (${defaultMaterial.baleDensity})` : "Grade A (Clear)"
+  );
   const [intakeWeight, setIntakeWeight] = useState("2500");
-  const [storageBay, setStorageBay] = useState("Bay 01 - Baled PET");
+  const [storageBay, setStorageBay] = useState(
+    defaultMaterial ? `Bay 01 - ${defaultMaterial.name}` : "Bay 01 - Baled PET"
+  );
   const [intakeLoading, setIntakeLoading] = useState(false);
 
   const stages = [
@@ -59,6 +66,31 @@ export function InventoryView({ initialBatches }: InventoryViewProps) {
     { id: "processed", label: "4. Processed" },
     { id: "sold", label: "5. Sold / Transferred" },
   ];
+
+  // Helper to format or match material display names
+  const getMaterialDisplayName = (codeOrType: string) => {
+    const matched = materials.find(
+      (m) =>
+        m.code.toLowerCase() === codeOrType.toLowerCase() ||
+        m.id === codeOrType ||
+        m.name.toLowerCase() === codeOrType.toLowerCase()
+    );
+    if (matched) return matched.name;
+    const legacyMap: Record<string, string> = {
+      pet_plastic: "PET Clear Bottles",
+      hdpe_plastic: "HDPE Blow Moulding",
+      cardboard_occ: "Cardboard (OCC Bales)",
+      aluminium_cans: "Aluminium Beverage Cans",
+      organic_compost: "Organic Composting Biomass",
+      ldpe_film: "LDPE Film & Wrap",
+      pp_polypropylene: "PP Polypropylene",
+      mixed_paper: "Mixed Paper",
+      steel_scrap: "Steel Scrap",
+      glass_cullet: "Glass Cullet",
+      electronic_waste: "Electronic Waste",
+    };
+    return legacyMap[codeOrType] || codeOrType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  };
 
   // Aggregates
   let totalStockKg = 0;
@@ -72,9 +104,11 @@ export function InventoryView({ initialBatches }: InventoryViewProps) {
   });
 
   const filteredBatches = batches.filter((b) => {
+    const materialName = getMaterialDisplayName(b.materialType);
     const matchesSearch =
       b.batchNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.materialType.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      materialName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.storageBay.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (b.buyerName && b.buyerName.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -278,11 +312,14 @@ export function InventoryView({ initialBatches }: InventoryViewProps) {
                   </td>
 
                   <td className="py-3.5 px-4">
-                    <div className="font-bold text-slate-900 capitalize">
-                      {batch.materialType.replace("_", " ")}
+                    <div className="font-bold text-slate-900">
+                      {getMaterialDisplayName(batch.materialType)}
                     </div>
-                    <div className="text-[11px] text-[#00993F] font-semibold">
-                      {batch.gradeQuality}
+                    <div className="text-[11px] text-[#00993F] font-semibold flex items-center gap-1.5 mt-0.5">
+                      <span className="font-mono text-[10px] bg-[#EDF9F1] px-1.5 py-0.5 rounded border border-[#ADE4C1]">
+                        {batch.materialType}
+                      </span>
+                      <span>{batch.gradeQuality}</span>
                     </div>
                   </td>
 
@@ -404,7 +441,7 @@ export function InventoryView({ initialBatches }: InventoryViewProps) {
             <div className="mt-3 p-2.5 rounded-nested bg-[#F6F8F7] border border-[#E3E9E5] text-xs">
               <span className="text-[#9CA3AF] block font-medium">Batch:</span>
               <span className="font-mono font-bold text-slate-900">
-                {selectedBatchForSale.batchNumber} • {selectedBatchForSale.materialType.replace("_", " ")}
+                {selectedBatchForSale.batchNumber} • {getMaterialDisplayName(selectedBatchForSale.materialType)}
               </span>
             </div>
 
@@ -507,15 +544,37 @@ export function InventoryView({ initialBatches }: InventoryViewProps) {
                 </label>
                 <select
                   value={materialType}
-                  onChange={(e) => setMaterialType(e.target.value)}
+                  onChange={(e) => {
+                    const code = e.target.value;
+                    setMaterialType(code);
+                    const matched = materials.find((m) => m.code === code);
+                    if (matched) {
+                      setStorageBay(`Bay 01 - ${matched.name}`);
+                      if (matched.baleDensity) {
+                        setGradeQuality(`Standard (${matched.baleDensity})`);
+                      }
+                    }
+                  }}
                   className="w-full p-2.5 rounded-nested border border-[#E3E9E5] bg-white focus:outline-none focus:border-[#00993F]"
                 >
-                  <option value="pet_plastic">PET Plastic Bottles</option>
-                  <option value="hdpe_plastic">HDPE Rigid Drums/Cans</option>
-                  <option value="cardboard_occ">Cardboard (OCC)</option>
-                  <option value="aluminium_cans">Aluminium UBC Cans</option>
-                  <option value="organic_compost">Organics / Food Waste</option>
+                  {materials.map((m) => (
+                    <option key={m.id} value={m.code}>
+                      {m.name} ({m.code}) — {m.category}
+                    </option>
+                  ))}
+                  {materials.length === 0 && (
+                    <>
+                      <option value="PET-CLR">PET Clear Bottles (PET-CLR)</option>
+                      <option value="HDP-RGD">HDPE Blow Moulding (HDP-RGD)</option>
+                      <option value="OCC-CRD">Cardboard (OCC Bales) (OCC-CRD)</option>
+                      <option value="ALU-UBC">Aluminium Beverage Cans (ALU-UBC)</option>
+                      <option value="ORG-CMP">Organic Composting Biomass (ORG-CMP)</option>
+                    </>
+                  )}
                 </select>
+                <span className="text-[10px] text-[#9CA3AF] mt-1 block">
+                  Dynamically loaded from database material specifications ({materials.length} active streams)
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

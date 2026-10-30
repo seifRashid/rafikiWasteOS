@@ -4,12 +4,14 @@ import React, { useState } from "react";
 import { Plus, Scale, Truck, Check, X } from "lucide-react";
 import { createJobAction } from "@/server/actions/collections";
 import { recordMaterialIntakeAction } from "@/server/actions/inventory";
+import type { WasteMaterial } from "@/server/db/schema";
 
 interface QuickActionsProps {
   clientsList?: Array<{ id: string; name: string }>;
+  materialsList?: WasteMaterial[];
 }
 
-export function QuickActions({ clientsList = [] }: QuickActionsProps) {
+export function QuickActions({ clientsList = [], materialsList = [] }: QuickActionsProps) {
   const [openModal, setOpenModal] = useState<"pickup" | "scale" | null>(null);
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -22,9 +24,9 @@ export function QuickActions({ clientsList = [] }: QuickActionsProps) {
   const [expectedKg, setExpectedKg] = useState("500");
 
   // Scale Form State
-  const [materialType, setMaterialType] = useState<
-    "pet_plastic" | "hdpe_plastic" | "cardboard_occ" | "aluminium_cans"
-  >("pet_plastic");
+  const [materialType, setMaterialType] = useState<string>(
+    materialsList[0]?.code || "PET-CLR"
+  );
   const [weightKg, setWeightKg] = useState("1200");
   const [storageBay, setStorageBay] = useState("Bay 01 - Baled PET");
 
@@ -229,13 +231,23 @@ export function QuickActions({ clientsList = [] }: QuickActionsProps) {
                   </label>
                   <select
                     value={materialType}
-                    onChange={(e) => setMaterialType(e.target.value as any)}
+                    onChange={(e) => setMaterialType(e.target.value)}
                     className="w-full text-xs p-2.5 rounded-nested border border-[#E3E9E5] bg-white focus:outline-none focus:border-[#00993F]"
                   >
-                    <option value="pet_plastic">PET Plastic (Bottles/Flakes)</option>
-                    <option value="hdpe_plastic">HDPE Plastic (Rigids/Drums)</option>
-                    <option value="cardboard_occ">Cardboard (OCC Baled)</option>
-                    <option value="aluminium_cans">Aluminium UBC Cans</option>
+                    {materialsList.length > 0 ? (
+                      materialsList.map((m) => (
+                        <option key={m.id} value={m.code}>
+                          {m.name} ({m.code})
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="PET-CLR">PET Plastic (Bottles/Flakes)</option>
+                        <option value="HDP-RGD">HDPE Plastic (Rigids/Drums)</option>
+                        <option value="OCC-CRD">Cardboard (OCC Baled)</option>
+                        <option value="ALU-UBC">Aluminium UBC Cans</option>
+                      </>
+                    )}
                   </select>
                 </div>
 

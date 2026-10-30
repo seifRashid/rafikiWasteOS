@@ -1,10 +1,14 @@
 import React from "react";
-import { getInventorySummary } from "@/server/db/queries";
+import { getInventorySummary, getWasteMaterials } from "@/server/db/queries";
 import { InventoryView } from "@/components/inventory/inventory-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function WasteInventoryPage() {
-  const batches = await getInventorySummary();
-  return <InventoryView initialBatches={batches} />;
+  const [batches, materials] = await Promise.all([
+    getInventorySummary(),
+    getWasteMaterials(),
+  ]);
+
+  return <InventoryView initialBatches={batches} initialMaterials={materials} />;
 }

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Truck,
   AlertTriangle,
@@ -336,62 +337,55 @@ export function FleetView({ initialVehicles, initialAssets }: FleetViewProps) {
         </div>
       )}
 
-      {/* Assets Tab (Bins, Weighbridges) */}
+      {/* Assets Tab (Bins, Machinery, Scales) */}
       {activeTab === "assets" && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-hoverable">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-mono text-xs font-bold text-[#00993F] bg-[#EDF9F1] px-2 py-0.5 rounded-full">
-                SCL-01-WB
-              </span>
-              <Badge variant="primary" dot>
-                Calibrated
-              </Badge>
-            </div>
-            <h4 className="font-bold text-slate-900 text-sm">Avery Berkel 60t Weighbridge</h4>
-            <p className="text-xs text-[#4B5563] mt-1">
-              Central Industrial Area MRF Depot • Certified by Kenya Bureau of Standards (KEBS).
-            </p>
-            <div className="mt-4 pt-3 border-t border-[#F0F4F2] text-xs flex justify-between">
-              <span className="text-[#9CA3AF]">Capacity: 60,000 kg</span>
-              <span className="font-bold text-[#00993F]">IP Connected</span>
-            </div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2">
+            <span className="text-xs font-semibold text-[#4B5563]">
+              Showing {assets.length} active registered capital assets & telemetry hardware
+            </span>
+            <Link
+              href="/fleet/assets"
+              className="text-xs font-bold text-[#00993F] hover:text-[#008035] hover:underline flex items-center gap-1"
+            >
+              <span>Manage All Containers & Assets →</span>
+            </Link>
           </div>
 
-          <div className="bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-hoverable">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-mono text-xs font-bold text-[#08A6BA] bg-[#EEFBFD] px-2 py-0.5 rounded-full">
-                BAL-B20-04
-              </span>
-              <Badge variant="primary" dot>
-                Operational
-              </Badge>
-            </div>
-            <h4 className="font-bold text-slate-900 text-sm">Bramidan B20 Vertical Baler</h4>
-            <p className="text-xs text-[#4B5563] mt-1">
-              Baling press producing 220kg - 250kg high-density PET and Cardboard bales.
-            </p>
-            <div className="mt-4 pt-3 border-t border-[#F0F4F2] text-xs flex justify-between">
-              <span className="text-[#9CA3AF]">Bay 01 Sorting</span>
-              <span className="font-bold text-[#08A6BA]">35 Bales / Shift</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-hoverable">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-mono text-xs font-bold text-slate-800 bg-[#F0F4F2] px-2 py-0.5 rounded-full">
-                BIN-LOT-2026
-              </span>
-              <Badge variant="neutral">Assigned</Badge>
-            </div>
-            <h4 className="font-bold text-slate-900 text-sm">182 x Heavy-Duty Wheeled Bins</h4>
-            <p className="text-xs text-[#4B5563] mt-1">
-              Color-coded 240L & 1100L bins deployed across Safari Hotel, Kilimani, and Schools.
-            </p>
-            <div className="mt-4 pt-3 border-t border-[#F0F4F2] text-xs flex justify-between">
-              <span className="text-[#9CA3AF]">Condition: Good</span>
-              <span className="font-bold text-slate-800">RFID Tagged</span>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {assets.map((a) => (
+              <div
+                key={a.assetTag}
+                className="bg-white rounded-card p-5 border border-[#E3E9E5] shadow-card-hoverable flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-mono text-xs font-bold text-[#00993F] bg-[#EDF9F1] px-2 py-0.5 rounded-full border border-[#ADE4C1]">
+                      {a.assetTag}
+                    </span>
+                    <Badge
+                      variant={a.condition === "Excellent" || a.condition === "Good" ? "primary" : "neutral"}
+                      dot
+                    >
+                      {a.condition}
+                    </Badge>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-sm">{a.name}</h4>
+                  <p className="text-xs text-[#4B5563] mt-1">
+                    {a.category.replace(/_/g, " ").toUpperCase()} • {a.location}
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-[#F0F4F2] text-xs flex justify-between items-center text-[#9CA3AF]">
+                  <span>Tracked Capital Unit</span>
+                  <Link
+                    href="/fleet/assets"
+                    className="font-bold text-[#00993F] hover:underline"
+                  >
+                    View in Fleet Assets
+                  </Link>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

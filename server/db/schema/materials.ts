@@ -13,6 +13,7 @@ export const wasteMaterials = pgTable("waste_materials", {
   code: varchar("code", { length: 32 }).unique().notNull(), // e.g. PET-CLR, HDP-RGD
   name: varchar("name", { length: 128 }).notNull(), // e.g. PET Clear Bottles
   category: varchar("category", { length: 64 }).notNull(), // e.g. Rigid Plastic, Paper & Fibre
+  wasteStream: varchar("waste_stream", { length: 32 }).default("recyclable").notNull(), // organic, recyclable, residual, hazardous, electronic
   benchmarkPrice: decimal("benchmark_price", { precision: 10, scale: 2 }).notNull(), // KES per kg
   baleDensity: varchar("bale_density", { length: 128 }).notNull(), // e.g. 220 - 250 kg/bale
   acceptable: text("acceptable").notNull(), // e.g. Clear water and beverage bottles, sorted caps

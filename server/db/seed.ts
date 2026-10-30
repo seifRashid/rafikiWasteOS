@@ -29,6 +29,7 @@ export async function seedDatabase() {
   await db.delete(schema.clients);
   await db.delete(schema.projects);
   await db.delete(schema.wasteMaterials);
+  await db.delete(schema.containerTypes);
 
   // 2. Insert Fleet Vehicles
   console.log("Inserting fleet vehicles...");
@@ -625,6 +626,7 @@ export async function seedDatabase() {
       code: "PET-CLR",
       name: "PET Clear Bottles",
       category: "Rigid Plastic",
+      wasteStream: "recyclable",
       benchmarkPrice: "38.50",
       baleDensity: "220 - 250 kg/bale",
       acceptable: "Clear water and beverage bottles, sorted caps",
@@ -635,6 +637,7 @@ export async function seedDatabase() {
       code: "HDP-RGD",
       name: "HDPE Blow Moulding",
       category: "Rigid Plastic",
+      wasteStream: "recyclable",
       benchmarkPrice: "44.00",
       baleDensity: "180 - 220 kg/bale",
       acceptable: "Milk jugs, shampoo/detergent containers, chemical drums",
@@ -645,6 +648,7 @@ export async function seedDatabase() {
       code: "OCC-CRD",
       name: "Cardboard (OCC Bales)",
       category: "Paper & Fibre",
+      wasteStream: "recyclable",
       benchmarkPrice: "14.50",
       baleDensity: "350 - 450 kg/bale",
       acceptable: "Corrugated shipping boxes, clean industrial cartons",
@@ -655,6 +659,7 @@ export async function seedDatabase() {
       code: "ALU-UBC",
       name: "Aluminium Beverage Cans",
       category: "Non-Ferrous Metal",
+      wasteStream: "recyclable",
       benchmarkPrice: "165.00",
       baleDensity: "120 - 150 kg briquettes",
       acceptable: "All soda and beverage cans, clean tin-free",
@@ -665,11 +670,96 @@ export async function seedDatabase() {
       code: "ORG-CMP",
       name: "Organic Composting Biomass",
       category: "Organic Waste",
+      wasteStream: "organic",
       benchmarkPrice: "12.00",
       baleDensity: "Bulk Windrow (kg/m³)",
       acceptable: "Vegetable scraps, fruit rinds, coffee grounds, garden clippings",
       rejects: "Meat/bones (vermin risk), plastic bags, glass shards",
       isVerified: true,
+    },
+  ]);
+
+  console.log("Inserting container types catalog...");
+  await db.insert(schema.containerTypes).values([
+    {
+      code: "BIN-240L",
+      name: "240L Heavy-Duty Wheeled Bin",
+      category: "Wheeled Bin",
+      capacityLitres: 240,
+      compatibleStream: "Organic & Recyclable",
+      totalStock: 182,
+      colorCode: "#00993F",
+      rfidTracked: true,
+      description: "Standard 240L curbside bins deployed across hotels, apartments, and schools.",
+    },
+    {
+      code: "BIN-1100L",
+      name: "1100L Heavy Steel Eurobin",
+      category: "Eurobin",
+      capacityLitres: 1100,
+      compatibleStream: "Recyclable (Cardboard & Paper)",
+      totalStock: 24,
+      colorCode: "#08A6BA",
+      rfidTracked: true,
+      description: "Large 4-wheeled eurobins for bulk commercial and institutional waste generators.",
+    },
+    {
+      code: "SKP-10M3",
+      name: "10m³ Industrial Roll-On Skip",
+      category: "Industrial Skip",
+      capacityLitres: 10000,
+      compatibleStream: "Residual & Construction",
+      totalStock: 12,
+      colorCode: "#B45309",
+      rfidTracked: true,
+      description: "Heavy-gauge steel skips deployed for industrial manufacturing clients and municipal debris.",
+    },
+    {
+      code: "CAG-BAL",
+      name: "1.5m³ Steel Baling Wire Cage",
+      category: "Storage Cage",
+      capacityLitres: 1500,
+      compatibleStream: "Recyclable (PET Bottles & OCC)",
+      totalStock: 15,
+      colorCode: "#3B82F6",
+      rfidTracked: false,
+      description: "Collapsible wire mesh cages for staging uncompressed PET bottles and cardboard.",
+    },
+  ]);
+
+  console.log("Inserting physical assets & machinery...");
+  await db.insert(schema.assets).values([
+    {
+      assetTag: "SCL-01-WB",
+      name: "Avery Berkel 60t Digital Weighbridge Scale",
+      category: "weighbridge_scale",
+      location: "Central Transfer Station - Ingate / Outgate",
+      condition: "Excellent",
+      purchaseCost: "4500000.00",
+    },
+    {
+      assetTag: "BAL-B20-04",
+      name: "Bramidan B20 Vertical Baler Press",
+      category: "baling_press",
+      location: "MRF Shed Bay 01",
+      condition: "Good",
+      purchaseCost: "1850000.00",
+    },
+    {
+      assetTag: "BIN-LOT-240",
+      name: "182 x Heavy-Duty Wheeled Bins (240L)",
+      category: "wheeled_bin_240l",
+      location: "Deployed at Client Sites & Depot Storage",
+      condition: "Good",
+      purchaseCost: "1274000.00",
+    },
+    {
+      assetTag: "SKP-1100-08",
+      name: "12 x Heavy Steel Skip Bins (1100L)",
+      category: "wheeled_bin_1100l",
+      location: "Industrial Area & Brewery Lots",
+      condition: "Fair",
+      purchaseCost: "720000.00",
     },
   ]);
 

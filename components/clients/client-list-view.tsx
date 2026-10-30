@@ -632,15 +632,29 @@ export function ClientListView({ initialClients }: ClientListViewProps) {
 
                 <div>
                   <label className="font-bold text-[#4B5563] block mb-1">
-                    Container Information
+                    Container Allocation & Deployment
                   </label>
                   <input
                     type="text"
+                    list="container-suggestions"
                     placeholder="e.g. 4 x 240L Wheeled Bins + 1 Baling Cage"
                     value={formData.binCount}
                     onChange={(e) => setFormData({ ...formData, binCount: e.target.value })}
                     className="w-full p-2.5 rounded-nested border border-[#E3E9E5] focus:outline-none focus:border-[#00993F]"
                   />
+                  <datalist id="container-suggestions">
+                    <option value="2 x 240L Wheeled Bins" />
+                    <option value="4 x 240L Wheeled Bins" />
+                    <option value="8 x 240L Wheeled Bins" />
+                    <option value="16 x 240L Wheeled Bins + 2 x 1100L Skips" />
+                    <option value="4 x 1100L Steel Skips" />
+                    <option value="2 x 10m³ Static Heavy Roll-on Skips" />
+                    <option value="12 x Static Heavy Roll-on Skips" />
+                    <option value="4 x 240L Bins + 1 Baling Cage" />
+                  </datalist>
+                  <span className="text-[10px] text-[#9CA3AF] mt-0.5 block">
+                    Allocates standard fleet containers tracked in Depot & Fleet Assets
+                  </span>
                 </div>
 
                 <div className="pt-4 flex items-center justify-end gap-2 border-t border-[#F0F4F2]">
