@@ -126,6 +126,8 @@ export async function createMaterialAction(rawInput: unknown) {
       .returning();
 
     safeRevalidatePath("/waste/materials");
+    safeRevalidatePath("/waste/inventory");
+    safeRevalidatePath("/waste/sales");
     safeRevalidatePath("/waste");
     safeRevalidatePath("/inventory");
     safeRevalidatePath("/settings/waste-types");
@@ -191,6 +193,8 @@ export async function updateMaterialAction(rawInput: unknown) {
     }
 
     safeRevalidatePath("/waste/materials");
+    safeRevalidatePath("/waste/inventory");
+    safeRevalidatePath("/waste/sales");
     safeRevalidatePath("/waste");
     safeRevalidatePath("/inventory");
     safeRevalidatePath("/settings/waste-types");

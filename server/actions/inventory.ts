@@ -2,8 +2,8 @@
 
 import { z } from "zod";
 import { db } from "@/server/db";
-import { recyclableInventory, materialStageEnum, materialTypeEnum } from "@/server/db/schema";
-import { eq } from "drizzle-orm";
+import { recyclableInventory, wasteMaterials } from "@/server/db/schema";
+import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 function safeRevalidatePath(path: string) {
@@ -13,6 +13,14 @@ function safeRevalidatePath(path: string) {
     // No-op outside Next.js request context
   }
 }
+
+const LEGACY_CODE_MAP: Record<string, string> = {
+  pet_plastic: "PET-CLR",
+  hdpe_plastic: "HDP-RGD",
+  cardboard_occ: "OCC-CRD",
+  aluminium_cans: "ALU-UBC",
+  organic_compost: "ORG-CMP",
+};
 
 const RecordIntakeSchema = z.object({
   materialType: z.string().min(1, "Material stream is required"),
@@ -113,28 +121,66 @@ export async function recordMaterialSaleAction(rawInput: unknown) {
     }
 
     const { batchId, buyerName, unitSellingPrice, soldWeightKg, notes } = parsed.data;
-    const totalRevenue = unitSellingPrice * soldWeightKg;
 
+    // Fetch the target batch and active materials catalog to enforce the official benchmark price set in Materials
+    const [[targetBatch], catalogMaterials] = await Promise.all([
+      db
+        .select()
+        .from(recyclableInventory)
+        .where(eq(recyclableInventory.id, batchId))
+        .limit(1),
+      db
+        .select()
+        .from(wasteMaterials)
+        .where(eq(wasteMaterials.isDeleted, false)),
+    ]);
+
+    let authoritativeUnitPrice = unitSellingPrice;
+    if (targetBatch) {
+      const rawCode = targetBatch.materialType;
+      const mappedCode = LEGACY_CODE_MAP[rawCode] || rawCode;
+      const matchedMaterial = catalogMaterials.find(
+        (m) =>
+          m.code.toLowerCase() === mappedCode.toLowerCase() ||
+          m.code.toLowerCase() === rawCode.toLowerCase() ||
+          m.name.toLowerCase() === rawCode.toLowerCase()
+      );
+      if (matchedMaterial) {
+        const parsedBenchmark = parseFloat(matchedMaterial.benchmarkPrice);
+        if (!isNaN(parsedBenchmark) && parsedBenchmark > 0) {
+          authoritativeUnitPrice = parsedBenchmark;
+        }
+      }
+    }
+
+    const totalRevenue = authoritativeUnitPrice * soldWeightKg;
+
+    // Update ONLY this specific inventory batch
     await db
       .update(recyclableInventory)
       .set({
         buyerName,
-        unitSellingPrice: unitSellingPrice.toFixed(2),
+        unitSellingPrice: authoritativeUnitPrice.toFixed(2),
         totalRevenue: totalRevenue.toFixed(2),
         currentWeightKg: (0).toFixed(2), // Consumed/sold
         stage: "sold",
         notes: notes ? notes : undefined,
         updatedAt: new Date(),
       })
-      .where(eq(recyclableInventory.id, batchId));
+      .where(and(eq(recyclableInventory.id, batchId), eq(recyclableInventory.isDeleted, false)));
 
     safeRevalidatePath("/inventory");
     safeRevalidatePath("/waste/inventory");
+    safeRevalidatePath("/waste/sales");
     safeRevalidatePath("/finance");
     safeRevalidatePath("/impact");
     safeRevalidatePath("/");
 
-    return { success: true, totalRevenue };
+    return {
+      success: true,
+      unitSellingPrice: authoritativeUnitPrice,
+      totalRevenue,
+    };
   } catch (error) {
     console.error("[ACTION_ERROR: recordMaterialSaleAction]", error);
     return { success: false, error: "Failed to record material sale." };

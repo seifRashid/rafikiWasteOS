@@ -1,25 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  Recycle,
   Search,
   Plus,
   DollarSign,
-  Scale,
   Warehouse,
-  TrendingUp,
   AlertTriangle,
   CheckCircle2,
-  ArrowRight,
-  ChevronRight,
   X,
-  Check,
   Package,
+  Lock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatWeight, formatCurrency, formatDate } from "@/lib/utils";
+import { formatWeight, formatCurrency } from "@/lib/utils";
 import {
   recordMaterialIntakeAction,
   updateMaterialStageAction,
@@ -32,16 +27,44 @@ interface InventoryViewProps {
   initialMaterials?: WasteMaterial[];
 }
 
+const LEGACY_CODE_TO_MATERIAL_CODE: Record<string, string> = {
+  pet_plastic: "PET-CLR",
+  hdpe_plastic: "HDP-RGD",
+  cardboard_occ: "OCC-CRD",
+  aluminium_cans: "ALU-UBC",
+  organic_compost: "ORG-CMP",
+};
+
+const FALLBACK_BENCHMARK_PRICES: Record<string, number> = {
+  "PET-CLR": 38.5,
+  pet_plastic: 38.5,
+  "HDP-RGD": 44.0,
+  hdpe_plastic: 44.0,
+  "OCC-CRD": 14.5,
+  cardboard_occ: 14.5,
+  "ALU-UBC": 165.0,
+  aluminium_cans: 165.0,
+  "ORG-CMP": 12.0,
+  organic_compost: 12.0,
+};
+
 export function InventoryView({ initialBatches, initialMaterials = [] }: InventoryViewProps) {
   const [batches, setBatches] = useState<RecyclableInventory[]>(initialBatches);
-  const [materials] = useState<WasteMaterial[]>(initialMaterials);
+  const [materials, setMaterials] = useState<WasteMaterial[]>(initialMaterials);
   const [selectedStage, setSelectedStage] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    setBatches(initialBatches);
+  }, [initialBatches]);
+
+  useEffect(() => {
+    setMaterials(initialMaterials);
+  }, [initialMaterials]);
 
   // Sale Modal State
   const [selectedBatchForSale, setSelectedBatchForSale] = useState<RecyclableInventory | null>(null);
   const [buyerName, setBuyerName] = useState("");
-  const [unitPrice, setUnitPrice] = useState("38.50");
   const [soldWeight, setSoldWeight] = useState("");
   const [saleLoading, setSaleLoading] = useState(false);
 
@@ -67,14 +90,23 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
     { id: "sold", label: "5. Sold / Transferred" },
   ];
 
+  // Helper to match a batch's materialType to its WasteMaterial specification from the Materials page
+  const findMatchedMaterial = (codeOrType: string): WasteMaterial | undefined => {
+    const normalized = codeOrType.trim().toLowerCase();
+    const mappedCode = (LEGACY_CODE_TO_MATERIAL_CODE[codeOrType] || codeOrType).toLowerCase();
+
+    return materials.find(
+      (m) =>
+        m.code.toLowerCase() === normalized ||
+        m.code.toLowerCase() === mappedCode ||
+        m.id === codeOrType ||
+        m.name.toLowerCase() === normalized
+    );
+  };
+
   // Helper to format or match material display names
   const getMaterialDisplayName = (codeOrType: string) => {
-    const matched = materials.find(
-      (m) =>
-        m.code.toLowerCase() === codeOrType.toLowerCase() ||
-        m.id === codeOrType ||
-        m.name.toLowerCase() === codeOrType.toLowerCase()
-    );
+    const matched = findMatchedMaterial(codeOrType);
     if (matched) return matched.name;
     const legacyMap: Record<string, string> = {
       pet_plastic: "PET Clear Bottles",
@@ -92,8 +124,29 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
       "HAZ-WST": "Hazardous Waste Stream",
       "EWST-REC": "Electronic Waste Stream",
     };
-    return legacyMap[codeOrType] || codeOrType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    return (
+      legacyMap[codeOrType] ||
+      codeOrType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    );
   };
+
+  // Authoritative unit price (KES/kg) strictly from the Materials page benchmarkPrice
+  const getMaterialBenchmarkPrice = (codeOrType: string): number => {
+    const matched = findMatchedMaterial(codeOrType);
+    if (matched) {
+      const parsed = parseFloat(matched.benchmarkPrice);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    const mappedCode = LEGACY_CODE_TO_MATERIAL_CODE[codeOrType] || codeOrType;
+    return FALLBACK_BENCHMARK_PRICES[mappedCode] ?? FALLBACK_BENCHMARK_PRICES[codeOrType] ?? 38.5;
+  };
+
+  // Derived read-only unit price for the currently selected batch in the Record Sale modal
+  const selectedBatchUnitPrice = selectedBatchForSale
+    ? getMaterialBenchmarkPrice(selectedBatchForSale.materialType)
+    : 0;
 
   // Aggregates
   let totalStockKg = 0;
@@ -125,26 +178,29 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
     setSaleLoading(true);
 
     try {
-      const price = parseFloat(unitPrice);
+      const targetBatchId = selectedBatchForSale.id;
+      const price = getMaterialBenchmarkPrice(selectedBatchForSale.materialType);
       const weight = parseFloat(soldWeight) || parseFloat(selectedBatchForSale.currentWeightKg);
       const res = await recordMaterialSaleAction({
-        batchId: selectedBatchForSale.id,
+        batchId: targetBatchId,
         buyerName,
         unitSellingPrice: price,
         soldWeightKg: weight,
         notes: "Scrap sale dispatch verified",
       });
 
-      if (res.success && res.totalRevenue) {
-        setBatches(
-          batches.map((b) =>
-            b.id === selectedBatchForSale.id
+      if (res.success && res.totalRevenue !== undefined) {
+        const finalUnitPrice = res.unitSellingPrice ?? price;
+        const finalRevenue = res.totalRevenue;
+        setBatches((prevBatches) =>
+          prevBatches.map((b) =>
+            b.id === targetBatchId
               ? {
                   ...b,
                   stage: "sold",
                   buyerName,
-                  unitSellingPrice: price.toFixed(2),
-                  totalRevenue: res.totalRevenue.toFixed(2),
+                  unitSellingPrice: finalUnitPrice.toFixed(2),
+                  totalRevenue: finalRevenue.toFixed(2),
                   currentWeightKg: "0.00",
                 }
               : b
@@ -185,12 +241,15 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
     }
   };
 
-  const handleAdvanceStage = async (batchId: string, nextStage: any) => {
+  const handleAdvanceStage = async (
+    batchId: string,
+    nextStage: "collected" | "sorted" | "stored" | "processed" | "sold" | "transferred"
+  ) => {
     try {
       const res = await updateMaterialStageAction(batchId, nextStage);
       if (res.success) {
-        setBatches(
-          batches.map((b) => (b.id === batchId ? { ...b, stage: nextStage } : b))
+        setBatches((prev) =>
+          prev.map((b) => (b.id === batchId ? { ...b, stage: nextStage } : b))
         );
       }
     } catch {
@@ -398,6 +457,7 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
                           onClick={() => {
                             setSelectedBatchForSale(batch);
                             setSoldWeight(batch.currentWeightKg);
+                            setBuyerName("");
                           }}
                           className="px-2.5 py-1 rounded-nested bg-[#EDF9F1] text-[#00682B] border border-[#ADE4C1] text-[11px] font-bold hover:bg-[#D3F3DE] flex items-center gap-1"
                         >
@@ -473,17 +533,28 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-[#4B5563] block mb-1">
-                    Unit Price (KES / kg) *
+                  <label className="font-bold text-[#4B5563] flex items-center justify-between mb-1">
+                    <span>Unit Price (KES / kg)</span>
+                    <span
+                      className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[#00682B]"
+                      title="Configured on the Waste Materials page"
+                    >
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>Fixed</span>
+                    </span>
                   </label>
                   <input
-                    type="number"
-                    step="0.5"
-                    required
-                    value={unitPrice}
-                    onChange={(e) => setUnitPrice(e.target.value)}
-                    className="w-full p-2.5 rounded-nested border border-[#E3E9E5] font-mono focus:outline-none focus:border-[#00993F]"
+                    type="text"
+                    readOnly
+                    disabled
+                    value={selectedBatchUnitPrice.toFixed(2)}
+                    aria-readonly="true"
+                    title="Unit price is locked to the Benchmark Scrap Rate set on the Materials page"
+                    className="w-full p-2.5 rounded-nested border border-[#E3E9E5] bg-[#F6F8F7] text-slate-700 font-mono font-bold cursor-not-allowed select-none"
                   />
+                  <span className="text-[10px] text-[#9CA3AF] mt-1 block">
+                    Set in Materials catalog ({selectedBatchForSale.materialType})
+                  </span>
                 </div>
 
                 <div>
@@ -492,6 +563,8 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
                   </label>
                   <input
                     type="number"
+                    step="0.01"
+                    min="0.01"
                     required
                     value={soldWeight}
                     onChange={(e) => setSoldWeight(e.target.value)}
@@ -501,11 +574,11 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
               </div>
 
               {/* Total Revenue Preview */}
-              {parseFloat(unitPrice) > 0 && parseFloat(soldWeight) > 0 && (
+              {selectedBatchUnitPrice > 0 && parseFloat(soldWeight) > 0 && (
                 <div className="p-3 rounded-nested bg-[#EDF9F1] border border-[#ADE4C1] flex items-center justify-between">
                   <span className="font-bold text-[#00682B]">Total Sale Revenue:</span>
                   <span className="font-mono text-base font-extrabold text-[#00682B]">
-                    {formatCurrency(parseFloat(unitPrice) * parseFloat(soldWeight), "KES")}
+                    {formatCurrency(selectedBatchUnitPrice * parseFloat(soldWeight), "KES")}
                   </span>
                 </div>
               )}
