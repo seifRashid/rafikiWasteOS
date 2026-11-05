@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -16,6 +16,13 @@ import { useMobileNav } from "./mobile-nav-context";
 export function MobileNav() {
   const pathname = usePathname();
   const { isOpen, toggleMobileNav } = useMobileNav();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
+  const activePath = pendingHref || pathname;
 
   const links = [
     { name: "Command", href: "/", icon: LayoutDashboard },
@@ -28,13 +35,17 @@ export function MobileNav() {
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E3E9E5] px-2 py-1.5 flex items-center justify-around shadow-sm">
       {links.slice(0, 2).map((link) => {
         const isActive =
-          link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+          link.href === "/" ? activePath === "/" : activePath.startsWith(link.href);
         const Icon = link.icon;
 
         return (
           <Link
             key={link.href}
             href={link.href}
+            prefetch={true}
+            onClick={() => {
+              if (pathname !== link.href) setPendingHref(link.href);
+            }}
             className={cn(
               "flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-[10px] font-semibold transition-colors min-w-[56px]",
               isActive ? "text-[#00993F]" : "text-[#9CA3AF] hover:text-[#4B5563]"
@@ -49,12 +60,16 @@ export function MobileNav() {
       {/* Center Highlighted Routes & Dispatch Mode */}
       {(() => {
         const routeLink = links[2];
-        const isActive = pathname.startsWith(routeLink.href);
+        const isActive = activePath.startsWith(routeLink.href);
         const Icon = routeLink.icon;
 
         return (
           <Link
             href={routeLink.href}
+            prefetch={true}
+            onClick={() => {
+              if (pathname !== routeLink.href) setPendingHref(routeLink.href);
+            }}
             className={cn(
               "flex flex-col items-center justify-center -mt-5 w-12 h-12 rounded-full shadow-lg transition-transform",
               isActive
@@ -71,12 +86,17 @@ export function MobileNav() {
       {/* Clients Link */}
       {(() => {
         const clientLink = links[3];
-        const isActive = pathname.startsWith(clientLink.href) || pathname.startsWith("/clients");
+        const isActive =
+          activePath.startsWith(clientLink.href) || activePath.startsWith("/clients");
         const Icon = clientLink.icon;
 
         return (
           <Link
             href={clientLink.href}
+            prefetch={true}
+            onClick={() => {
+              if (pathname !== clientLink.href) setPendingHref(clientLink.href);
+            }}
             className={cn(
               "flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-[10px] font-semibold transition-colors min-w-[56px]",
               isActive ? "text-[#00993F]" : "text-[#9CA3AF] hover:text-[#4B5563]"

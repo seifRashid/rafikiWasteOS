@@ -2,11 +2,18 @@
 
 import { z } from "zod";
 import { db } from "@/server/db";
-import { collectionJobs, jobStatusEnum, missedReasonEnum, vehicles, routes } from "@/server/db/schema";
+import {
+  collectionJobs,
+  jobStatusEnum,
+  missedReasonEnum,
+  vehicles,
+  routes,
+} from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getCollectionJobsWithDetails } from "@/server/db/queries";
 import { syncDateOperations } from "./routes";
+import { syncInventoryBatchFromJob } from "@/server/services/inventory-intake-sync";
 
 const RecordWeightSchema = z.object({
   jobId: z.string().uuid(),
@@ -77,12 +84,17 @@ export async function recordCollectionWeightAction(rawInput: unknown) {
       })
       .where(eq(collectionJobs.id, jobId));
 
+    // Automatically insert or update the corresponding batch in Recyclable Inventory
+    const batch = await syncInventoryBatchFromJob(jobId);
+
     revalidatePath("/operations/collections");
+    revalidatePath("/waste/records");
+    revalidatePath("/waste/inventory");
     revalidatePath("/inventory");
     revalidatePath("/impact");
     revalidatePath("/");
 
-    return { success: true, netWeightKg };
+    return { success: true, netWeightKg, batch };
   } catch (error) {
     console.error("[ACTION_ERROR: recordCollectionWeightAction]", error);
     return { success: false, error: "Failed to record weighbridge ticket." };
@@ -98,6 +110,12 @@ export async function updateJobStatusAction(rawInput: unknown) {
 
     const { jobId, status, notes, proofPhotoUrl, actualWeightKg } = parsed.data;
 
+    const [existingJob] = await db
+      .select()
+      .from(collectionJobs)
+      .where(eq(collectionJobs.id, jobId))
+      .limit(1);
+
     const updatePayload: Record<string, unknown> = {
       status,
       updatedAt: new Date(),
@@ -111,17 +129,25 @@ export async function updateJobStatusAction(rawInput: unknown) {
 
     if (notes) updatePayload.notes = notes;
     if (proofPhotoUrl) updatePayload.proofPhotoUrl = proofPhotoUrl;
+
+    // Ensure actualWeightKg is populated when a job is collected, delivered, or completed
     if (actualWeightKg !== undefined) {
       updatePayload.actualWeightKg = actualWeightKg.toFixed(2);
+    } else if (
+      ["collected", "delivered", "completed"].includes(status) &&
+      existingJob &&
+      !existingJob.actualWeightKg
+    ) {
+      updatePayload.actualWeightKg = existingJob.expectedQuantityKg || "0.00";
     }
 
-    const [existingJob] = await db
-      .select({ id: collectionJobs.id, routeId: collectionJobs.routeId })
-      .from(collectionJobs)
-      .where(eq(collectionJobs.id, jobId))
-      .limit(1);
-
     await db.update(collectionJobs).set(updatePayload).where(eq(collectionJobs.id, jobId));
+
+    // Automatically insert or update the corresponding batch in Recyclable Inventory when collected/delivered/completed
+    let syncedBatch = null;
+    if (["collected", "delivered", "completed"].includes(status)) {
+      syncedBatch = await syncInventoryBatchFromJob(jobId);
+    }
 
     // If job is part of a route, recalculate route's completed stops
     if (existingJob?.routeId) {
@@ -153,6 +179,9 @@ export async function updateJobStatusAction(rawInput: unknown) {
       revalidatePath("/operations/routes");
       revalidatePath("/operations/schedule");
       revalidatePath("/operations/collections");
+      revalidatePath("/waste/records");
+      revalidatePath("/waste/inventory");
+      revalidatePath("/inventory");
       revalidatePath("/routes");
       revalidatePath("/field");
       revalidatePath("/driver");
@@ -161,7 +190,7 @@ export async function updateJobStatusAction(rawInput: unknown) {
       // Ignored outside Next.js request lifecycle
     }
 
-    return { success: true };
+    return { success: true, batch: syncedBatch };
   } catch (error) {
     console.error("[ACTION_ERROR: updateJobStatusAction]", error);
     return { success: false, error: "Failed to update job status." };

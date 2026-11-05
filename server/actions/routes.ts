@@ -8,11 +8,8 @@ import {
   vehicles,
   dispatchSettings,
   clients,
-  type Route,
-  type Vehicle,
-  type DispatchSetting,
 } from "@/server/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import {
   isClientCollectedOnDay,
@@ -20,11 +17,30 @@ import {
   getClientDefaultStream,
   getClientDefaultExpectedKg,
 } from "@/lib/schedule-utils";
+import { syncInventoryBatchFromJob } from "@/server/services/inventory-intake-sync";
 
 const isUuid = (str: string | null | undefined): boolean => {
   if (!str) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
 };
+
+// In-memory 60s TTL cache per date so passive page navigations to /operations/collections,
+// /operations/routes, and /driver do not re-run 20+ DB writes on every click
+const SYNC_DATE_TTL_MS = 60 * 1000;
+const syncDateCache = new Map<
+  string,
+  {
+    timestamp: number;
+    result: {
+      dateStr: string;
+      weekday: string;
+      dueClientsCount: number;
+      eligibleStopsCount: number;
+      routesCount: number;
+      maxStops: number;
+    };
+  }
+>();
 
 // 1. Create a manual route
 const CreateRouteSchema = z.object({
@@ -75,6 +91,7 @@ export async function createRouteAction(rawInput: unknown) {
       })
       .returning();
 
+    syncDateCache.delete(routeDate);
     revalidatePath("/operations/routes");
     revalidatePath("/operations/schedule");
     revalidatePath("/");
@@ -101,6 +118,7 @@ export async function rescheduleMissedStopAction(jobId: string, newDateIso: stri
       })
       .where(eq(collectionJobs.id, jobId));
 
+    syncDateCache.clear();
     revalidatePath("/operations/collections");
     revalidatePath("/operations/routes");
     revalidatePath("/operations/schedule");
@@ -154,6 +172,7 @@ export async function updateDispatchSettingsAction(rawInput: unknown) {
       });
     }
 
+    syncDateCache.clear();
     revalidatePath("/operations/routes");
     revalidatePath("/operations/schedule");
     revalidatePath("/settings/system");
@@ -166,33 +185,56 @@ export async function updateDispatchSettingsAction(rawInput: unknown) {
 }
 
 // 4. Core Synchronization Engine: Sync Collection Jobs & Routes for a Specific Date from Real Client Schedules
-export async function syncDateOperations(targetDateIso: string, capacityOverride?: number) {
+export async function syncDateOperations(
+  targetDateIso: string,
+  capacityOverride?: number,
+  forceSync = false
+) {
   const dateStr = targetDateIso || new Date().toISOString().split("T")[0];
+  const now = Date.now();
+
+  // Fast path: if already synced within the last 60s and no capacityOverride/forceSync is requested, return cached result immediately
+  if (!forceSync && capacityOverride === undefined) {
+    const cached = syncDateCache.get(dateStr);
+    if (cached && now - cached.timestamp < SYNC_DATE_TTL_MS) {
+      return cached.result;
+    }
+  }
+
   const weekday = getWeekdayNameFromDate(dateStr);
 
-  // 1. Fetch capacity settings
-  const [settings] = await db.select().from(dispatchSettings).limit(1);
+  // 1. Fetch capacity settings, active clients, existing jobs, fleet vehicles, and existing routes in PARALLEL
+  const [settingsList, allActiveClients, allExistingJobs, fleetVehicles, existingRoutesForDate] =
+    await Promise.all([
+      db.select().from(dispatchSettings).limit(1),
+      db
+        .select()
+        .from(clients)
+        .where(and(eq(clients.isActive, true), eq(clients.isDeleted, false))),
+      db.select().from(collectionJobs),
+      db
+        .select()
+        .from(vehicles)
+        .where(eq(vehicles.isDeleted, false))
+        .orderBy(desc(vehicles.createdAt)),
+      db
+        .select()
+        .from(routes)
+        .where(and(eq(routes.routeDate, dateStr), eq(routes.isDeleted, false)))
+        .orderBy(routes.routeCode),
+    ]);
+
+  const settings = settingsList[0];
   const rawMaxStops =
     capacityOverride !== undefined && !isNaN(capacityOverride)
       ? capacityOverride
       : settings?.maxStopsPerRoute || 6;
   const maxStops = Math.max(1, Math.min(30, Math.floor(rawMaxStops)));
 
-  // 2. Fetch all registered active clients
-  const allActiveClients = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.isActive, true), eq(clients.isDeleted, false)));
-
   // Determine which clients are contracted / due on this weekday (strictly excluding expired contracts)
   const dueClients = allActiveClients.filter(
     (c) => (!c.contractEndDate || c.contractEndDate >= dateStr) && isClientCollectedOnDay(c, weekday)
   );
-
-  // 3. Fetch existing collection jobs for this target date (both active and soft-deleted)
-  const allExistingJobs = await db
-    .select()
-    .from(collectionJobs);
 
   const prefix = `JOB-${dateStr.replace(/-/g, "")}-`;
   let maxSeq = 0;
@@ -216,6 +258,7 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
   // b) Are duplicate scheduled jobs for the same client on this single date
   const dueClientIds = new Set(dueClients.map((c) => c.id));
   const retainedClientIds = new Set<string>();
+  const jobIdsToPrune: string[] = [];
 
   for (const job of existingJobsForDate) {
     const isDue = dueClientIds.has(job.clientId);
@@ -224,13 +267,17 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
     const isDuplicate = retainedClientIds.has(job.clientId);
 
     if ((!isDue && !isOnDemand && !isCompleted) || (isDuplicate && !isOnDemand && !isCompleted)) {
-      await db
-        .update(collectionJobs)
-        .set({ isDeleted: true, routeId: null, updatedAt: new Date() })
-        .where(eq(collectionJobs.id, job.id));
+      jobIdsToPrune.push(job.id);
     } else {
       retainedClientIds.add(job.clientId);
     }
+  }
+
+  if (jobIdsToPrune.length > 0) {
+    await db
+      .update(collectionJobs)
+      .set({ isDeleted: true, routeId: null, updatedAt: new Date() })
+      .where(inArray(collectionJobs.id, jobIdsToPrune));
   }
 
   // Generate missing jobs for due clients that don't have a job yet
@@ -270,64 +317,56 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
     }
   }
 
+  let insertedJobs: Array<typeof collectionJobs.$inferSelect> = [];
   if (newJobsToInsert.length > 0) {
-    await db.insert(collectionJobs).values(newJobsToInsert);
+    insertedJobs = await db.insert(collectionJobs).values(newJobsToInsert).returning();
   }
 
-  // 4. Fetch all eligible jobs for this date (excluding cancelled or deleted)
-  const freshDayJobs = await db
-    .select({
-      job: collectionJobs,
-      client: clients,
-    })
-    .from(collectionJobs)
-    .leftJoin(clients, eq(collectionJobs.clientId, clients.id))
-    .where(and(eq(collectionJobs.isDeleted, false)))
-    .orderBy(collectionJobs.stopSequence, collectionJobs.scheduledAt);
+  // Build client lookup map from active clients
+  const clientMap = new Map(allActiveClients.map((c) => [c.id, c]));
+  const prunedSet = new Set(jobIdsToPrune);
 
-  const targetDateJobs = freshDayJobs.filter(({ job, client }) => {
-    const jDate = new Date(job.scheduledAt).toISOString().split("T")[0];
-    if (jDate !== dateStr) return false;
-    if (job.status === ("cancelled" as any)) return false;
-
-    // Keep if client is due on this weekday OR if job is explicitly an on-demand booking
-    const isDue = client ? isClientCollectedOnDay(client, weekday) : false;
-    const isOnDemand = job.notes && job.notes.includes("[On-Demand");
-    const isAlreadyProgressed = ["in_progress", "collected", "delivered", "completed"].includes(job.status);
-
-    return isDue || isOnDemand || isAlreadyProgressed;
+  const combinedDateJobs = [
+    ...existingJobsForDate.filter((j) => !prunedSet.has(j.id)),
+    ...insertedJobs,
+  ].sort((a, b) => {
+    const seqDiff = (a.stopSequence || 0) - (b.stopSequence || 0);
+    if (seqDiff !== 0) return seqDiff;
+    return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
   });
 
-  // 5. Fetch fleet vehicles
-  const fleetVehicles = await db
-    .select()
-    .from(vehicles)
-    .where(eq(vehicles.isDeleted, false))
-    .orderBy(desc(vehicles.createdAt));
+  const targetDateJobs = combinedDateJobs
+    .map((job) => ({
+      job,
+      client: clientMap.get(job.clientId) || null,
+    }))
+    .filter(({ job, client }) => {
+      if ((job.status as string) === "cancelled") return false;
+      const isDue = client ? isClientCollectedOnDay(client, weekday) : false;
+      const isOnDemand = job.notes && job.notes.includes("[On-Demand");
+      const isAlreadyProgressed = ["in_progress", "collected", "delivered", "completed"].includes(
+        job.status
+      );
+      return isDue || isOnDemand || isAlreadyProgressed;
+    });
 
   const totalEligibleStops = targetDateJobs.length;
   const routesNeeded = totalEligibleStops > 0 ? Math.ceil(totalEligibleStops / maxStops) : 0;
 
-  // 6. Fetch existing routes for this date
-  const existingRoutesForDate = await db
-    .select()
-    .from(routes)
-    .where(and(eq(routes.routeDate, dateStr), eq(routes.isDeleted, false)))
-    .orderBy(routes.routeCode);
-
   // If routesNeeded is less than existing routes, mark surplus as deleted and unassign their jobs
   if (existingRoutesForDate.length > routesNeeded) {
-    const surplusRoutes = existingRoutesForDate.slice(routesNeeded);
-    for (const surplus of surplusRoutes) {
-      await db
-        .update(routes)
-        .set({ isDeleted: true, updatedAt: new Date() })
-        .where(eq(routes.id, surplus.id));
-
-      await db
-        .update(collectionJobs)
-        .set({ routeId: null, updatedAt: new Date() })
-        .where(eq(collectionJobs.routeId, surplus.id));
+    const surplusIds = existingRoutesForDate.slice(routesNeeded).map((r) => r.id);
+    if (surplusIds.length > 0) {
+      await Promise.all([
+        db
+          .update(routes)
+          .set({ isDeleted: true, updatedAt: new Date() })
+          .where(inArray(routes.id, surplusIds)),
+        db
+          .update(collectionJobs)
+          .set({ routeId: null, updatedAt: new Date() })
+          .where(inArray(collectionJobs.routeId, surplusIds)),
+      ]);
     }
   }
 
@@ -338,7 +377,7 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
     { name: "Brian Otieno", phone: "+254 734 567 890", crew: "Boniface Otieno, Joseph Mwangi" },
   ];
 
-  // 7. Partition eligible jobs into routes
+  // Partition eligible jobs into routes
   for (let rIndex = 0; rIndex < routesNeeded; rIndex++) {
     const sliceStart = rIndex * maxStops;
     const sliceEnd = Math.min(sliceStart + maxStops, totalEligibleStops);
@@ -389,7 +428,13 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
           isDeleted: false,
         })
         .returning();
-    } else {
+    } else if (
+      routeRecord.routeCode !== routeCode ||
+      routeRecord.name !== routeName ||
+      routeRecord.totalStops !== batch.length ||
+      routeRecord.completedStops !== completedCount ||
+      routeRecord.isDeleted
+    ) {
       await db
         .update(routes)
         .set({
@@ -407,40 +452,55 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
         .where(eq(routes.id, routeRecord.id));
     }
 
-    // Assign each job in this batch to routeRecord
+    // Only update jobs in this batch whose route assignment, sequence, or status actually changed
+    const targetVehId = routeRecord.vehicleId || assignedVehicle?.id || null;
+    const targetDriver = routeRecord.driverName || driverName;
+
+    const jobUpdates: Promise<unknown>[] = [];
     for (let sIndex = 0; sIndex < batch.length; sIndex++) {
       const { job } = batch[sIndex];
-      const nextStatus = ["collected", "delivered", "completed", "in_progress"].includes(job.status)
-        ? (job.status as any)
+      const nextStatus: typeof collectionJobs.$inferSelect["status"] = [
+        "collected",
+        "delivered",
+        "completed",
+        "in_progress",
+      ].includes(job.status)
+        ? job.status
         : routeRecord.status === "in_progress"
         ? "in_progress"
         : "assigned";
 
-      await db
-        .update(collectionJobs)
-        .set({
-          routeId: routeRecord.id,
-          vehicleId: routeRecord.vehicleId || assignedVehicle?.id || null,
-          driverName: routeRecord.driverName || driverName,
-          stopSequence: sIndex + 1,
-          status: nextStatus,
-          updatedAt: new Date(),
-        })
-        .where(eq(collectionJobs.id, job.id));
+      const targetSeq = sIndex + 1;
+      const needsUpdate =
+        job.routeId !== routeRecord.id ||
+        job.vehicleId !== targetVehId ||
+        job.driverName !== targetDriver ||
+        job.stopSequence !== targetSeq ||
+        job.status !== nextStatus;
+
+      if (needsUpdate) {
+        jobUpdates.push(
+          db
+            .update(collectionJobs)
+            .set({
+              routeId: routeRecord.id,
+              vehicleId: targetVehId,
+              driverName: targetDriver,
+              stopSequence: targetSeq,
+              status: nextStatus,
+              updatedAt: new Date(),
+            })
+            .where(eq(collectionJobs.id, job.id))
+        );
+      }
+    }
+
+    if (jobUpdates.length > 0) {
+      await Promise.all(jobUpdates);
     }
   }
 
-  try {
-    revalidatePath("/operations/routes");
-    revalidatePath("/operations/schedule");
-    revalidatePath("/driver");
-    revalidatePath("/operations/collections");
-    revalidatePath("/");
-  } catch {
-    // Ignore outside of server request
-  }
-
-  return {
+  const syncResult = {
     dateStr,
     weekday,
     dueClientsCount: dueClients.length,
@@ -448,6 +508,22 @@ export async function syncDateOperations(targetDateIso: string, capacityOverride
     routesCount: routesNeeded,
     maxStops,
   };
+
+  syncDateCache.set(dateStr, { timestamp: Date.now(), result: syncResult });
+
+  if (forceSync || capacityOverride !== undefined) {
+    try {
+      revalidatePath("/operations/routes");
+      revalidatePath("/operations/schedule");
+      revalidatePath("/driver");
+      revalidatePath("/operations/collections");
+      revalidatePath("/");
+    } catch {
+      // Ignore outside of server request
+    }
+  }
+
+  return syncResult;
 }
 
 // 5. Auto-Split & Generate Multiple Routes When Capacity Is Exceeded
@@ -458,7 +534,8 @@ export async function autoSplitAndGenerateRoutesAction(
   try {
     const result = await syncDateOperations(
       targetDateIso || new Date().toISOString().split("T")[0],
-      capacityOverride
+      capacityOverride,
+      true
     );
     return { success: true, ...result };
   } catch (error) {
@@ -471,45 +548,42 @@ export async function autoSplitAndGenerateRoutesAction(
 export async function syncAndGetDailyOperationsAction(targetDateIso: string) {
   try {
     const dateStr = targetDateIso || new Date().toISOString().split("T")[0];
-    await syncDateOperations(dateStr);
+    await syncDateOperations(dateStr, undefined, true);
 
-    // Fetch refreshed routes for dateStr
-    const dailyRoutes = await db
-      .select({
-        route: routes,
-        vehicle: vehicles,
-      })
-      .from(routes)
-      .leftJoin(vehicles, eq(routes.vehicleId, vehicles.id))
-      .where(and(eq(routes.routeDate, dateStr), eq(routes.isDeleted, false)))
-      .orderBy(routes.routeCode);
-
-    // Fetch refreshed stops for dateStr
-    const allStopsRaw = await db
-      .select({
-        job: collectionJobs,
-        client: clients,
-      })
-      .from(collectionJobs)
-      .leftJoin(clients, eq(collectionJobs.clientId, clients.id))
-      .where(and(eq(collectionJobs.isDeleted, false)))
-      .orderBy(collectionJobs.stopSequence, collectionJobs.scheduledAt);
+    const [dailyRoutes, allStopsRaw, allRoutes] = await Promise.all([
+      db
+        .select({
+          route: routes,
+          vehicle: vehicles,
+        })
+        .from(routes)
+        .leftJoin(vehicles, eq(routes.vehicleId, vehicles.id))
+        .where(and(eq(routes.routeDate, dateStr), eq(routes.isDeleted, false)))
+        .orderBy(routes.routeCode),
+      db
+        .select({
+          job: collectionJobs,
+          client: clients,
+        })
+        .from(collectionJobs)
+        .leftJoin(clients, eq(collectionJobs.clientId, clients.id))
+        .where(and(eq(collectionJobs.isDeleted, false)))
+        .orderBy(collectionJobs.stopSequence, collectionJobs.scheduledAt),
+      db
+        .select({
+          route: routes,
+          vehicle: vehicles,
+        })
+        .from(routes)
+        .leftJoin(vehicles, eq(routes.vehicleId, vehicles.id))
+        .where(eq(routes.isDeleted, false))
+        .orderBy(desc(routes.routeDate)),
+    ]);
 
     const dailyStops = allStopsRaw.filter(({ job }) => {
       const jd = new Date(job.scheduledAt).toISOString().split("T")[0];
       return jd === dateStr;
     });
-
-    // All active routes across all dates (for history)
-    const allRoutes = await db
-      .select({
-        route: routes,
-        vehicle: vehicles,
-      })
-      .from(routes)
-      .leftJoin(vehicles, eq(routes.vehicleId, vehicles.id))
-      .where(eq(routes.isDeleted, false))
-      .orderBy(desc(routes.routeDate));
 
     return {
       success: true,
@@ -574,22 +648,35 @@ export async function dispatchRouteAction(
           )
         );
     } else if (newStatus === "completed") {
-      await db
-        .update(collectionJobs)
-        .set({
-          status: "completed",
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(collectionJobs.routeId, routeId),
-            eq(collectionJobs.status, "in_progress")
-          )
-        );
+      const routeJobs = await db
+        .select()
+        .from(collectionJobs)
+        .where(and(eq(collectionJobs.routeId, routeId), eq(collectionJobs.isDeleted, false)));
+
+      for (const rj of routeJobs) {
+        if (rj.status !== "missed") {
+          await db
+            .update(collectionJobs)
+            .set({
+              status: "completed",
+              deliveredAt: rj.deliveredAt || new Date(),
+              actualWeightKg: rj.actualWeightKg || rj.expectedQuantityKg || "0.00",
+              updatedAt: new Date(),
+            })
+            .where(eq(collectionJobs.id, rj.id));
+
+          await syncInventoryBatchFromJob(rj.id);
+        }
+      }
     }
 
+    syncDateCache.clear();
     revalidatePath("/operations/routes");
     revalidatePath("/operations/schedule");
+    revalidatePath("/operations/collections");
+    revalidatePath("/waste/records");
+    revalidatePath("/waste/inventory");
+    revalidatePath("/inventory");
     revalidatePath("/driver");
     revalidatePath("/field");
     revalidatePath("/");
@@ -645,6 +732,7 @@ export async function updateRouteDispatchDetailsAction(rawInput: unknown) {
       })
       .where(eq(collectionJobs.routeId, routeId));
 
+    syncDateCache.clear();
     revalidatePath("/operations/routes");
     revalidatePath("/operations/schedule");
     revalidatePath("/driver");
@@ -661,17 +749,19 @@ export async function updateRouteDispatchDetailsAction(rawInput: unknown) {
 // 9. Reorder Route Stop Sequence
 export async function reorderRouteStopsAction(routeId: string, orderedJobIds: string[]) {
   try {
-    for (let i = 0; i < orderedJobIds.length; i++) {
-      const jobId = orderedJobIds[i];
-      await db
-        .update(collectionJobs)
-        .set({
-          stopSequence: i + 1,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(collectionJobs.id, jobId), eq(collectionJobs.routeId, routeId)));
-    }
+    await Promise.all(
+      orderedJobIds.map((jobId, i) =>
+        db
+          .update(collectionJobs)
+          .set({
+            stopSequence: i + 1,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(collectionJobs.id, jobId), eq(collectionJobs.routeId, routeId)))
+      )
+    );
 
+    syncDateCache.clear();
     revalidatePath("/operations/routes");
     revalidatePath("/driver");
     revalidatePath("/");

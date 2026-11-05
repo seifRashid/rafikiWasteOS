@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createNeonAuth } from "@neondatabase/auth/next/server";
 import { db } from "@/server/db";
 import { users, clients } from "@/server/db/schema";
@@ -40,10 +41,23 @@ export type FullUserProfile = {
   isClientActive?: boolean;
 };
 
+// Short-lived in-memory profile cache (20s TTL) to avoid redundant DB lookups on rapid page navigation
+const USER_PROFILE_CACHE_TTL_MS = 20_000;
+const userProfileCache = new Map<string, { profile: FullUserProfile; expiresAt: number }>();
+
+export function invalidateUserProfileCache(email?: string) {
+  if (email) {
+    userProfileCache.delete(email.toLowerCase());
+  } else {
+    userProfileCache.clear();
+  }
+}
+
 /**
- * Retrieves the current session and correlated application user record from PostgreSQL
+ * Retrieves the current session and correlated application user record from PostgreSQL.
+ * Wrapped with React `cache()` for request deduplication + 20s memory cache for fast route transitions.
  */
-export async function getCurrentUser(): Promise<FullUserProfile | null> {
+export const getCurrentUser = cache(async (): Promise<FullUserProfile | null> => {
   try {
     const { data: session } = await auth.getSession();
     if (!session?.user || !session.user.email) {
@@ -51,6 +65,12 @@ export async function getCurrentUser(): Promise<FullUserProfile | null> {
     }
 
     const authUser = session.user as AuthSessionUser;
+    const cacheKey = authUser.email.toLowerCase();
+    const now = Date.now();
+    const cached = userProfileCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.profile;
+    }
 
     // Look up application user record in PostgreSQL
     const existing = await db
@@ -93,7 +113,7 @@ export async function getCurrentUser(): Promise<FullUserProfile | null> {
       // An approved client user must have an active user status AND an active client organization
       const isApproved = appUser.status === "active" && (!isClient || isClientActive);
 
-      return {
+      const profile: FullUserProfile = {
         authUserId: authUser.id,
         appUserId: appUser.id,
         clientId: appUser.clientId,
@@ -112,10 +132,13 @@ export async function getCurrentUser(): Promise<FullUserProfile | null> {
         isClient,
         isClientActive,
       };
+
+      userProfileCache.set(cacheKey, { profile, expiresAt: now + USER_PROFILE_CACHE_TTL_MS });
+      return profile;
     }
 
     // If registered via Neon Auth but not yet in domain table, return pending approval
-    return {
+    const pendingProfile: FullUserProfile = {
       authUserId: authUser.id,
       fullName: authUser.name,
       email: authUser.email,
@@ -126,11 +149,14 @@ export async function getCurrentUser(): Promise<FullUserProfile | null> {
       isApproved: false,
       isClient: false,
     };
+
+    userProfileCache.set(cacheKey, { profile: pendingProfile, expiresAt: now + 5_000 });
+    return pendingProfile;
   } catch (error) {
     console.error("[getCurrentUser Error]:", error);
     return null;
   }
-}
+});
 
 /**
  * Enforces client authorization and returns the client context.

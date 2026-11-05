@@ -9,6 +9,10 @@ export interface DeactivationResult {
   processedAt: string;
 }
 
+// 5-minute in-memory throttle so page loads don't repeatedly query for expired contracts
+const EXPIRATION_CHECK_TTL_MS = 5 * 60 * 1000;
+let lastExpirationCheckAt = 0;
+
 /**
  * Automatically inspects all client contracts and deactivates any clients
  * whose contract end date has expired (contractEndDate < today).
@@ -19,8 +23,19 @@ export interface DeactivationResult {
  * - Cancels future uncollected scheduled jobs.
  * - PRESERVES all historical jobs (completed, delivered, collected), weighbridge records, and invoices!
  */
-export async function deactivateExpiredContractsService(): Promise<DeactivationResult> {
+export async function deactivateExpiredContractsService(force = false): Promise<DeactivationResult> {
   const now = new Date();
+  const nowMs = now.getTime();
+
+  if (!force && nowMs - lastExpirationCheckAt < EXPIRATION_CHECK_TTL_MS) {
+    return {
+      deactivatedCount: 0,
+      deactivatedClientIds: [],
+      processedAt: now.toISOString(),
+    };
+  }
+
+  lastExpirationCheckAt = nowMs;
   const todayStr = now.toISOString().split("T")[0]; // YYYY-MM-DD
 
   try {
@@ -138,14 +153,14 @@ if (typeof setInterval !== "undefined" && !globalScope[WATCHER_KEY]) {
 
   // Run on startup
   setTimeout(() => {
-    deactivateExpiredContractsService().catch((e) =>
+    deactivateExpiredContractsService(true).catch((e) =>
       console.warn("[Initial contract expiration check note]:", e)
     );
   }, 3000);
 
   // Run every 1 hour (3600000ms)
   setInterval(() => {
-    deactivateExpiredContractsService().catch((e) =>
+    deactivateExpiredContractsService(true).catch((e) =>
       console.warn("[Periodic contract expiration check note]:", e)
     );
   }, 1000 * 60 * 60);

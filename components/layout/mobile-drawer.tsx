@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   LayoutDashboard,
@@ -12,17 +12,14 @@ import {
   DollarSign,
   BarChart3,
   Settings,
-  Smartphone,
   ChevronDown,
   ChevronRight,
   X,
   Search,
-  CheckSquare,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMobileNav } from "./mobile-nav-context";
-import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 
 interface NavSubItem {
@@ -54,6 +51,13 @@ export function MobileDrawer({ currentUser }: MobileDrawerProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
+  const activePath = pendingHref || pathname;
 
   const navSections: NavSection[] = [
     {
@@ -196,7 +200,11 @@ export function MobileDrawer({ currentUser }: MobileDrawerProps) {
         <div className="p-4 border-b border-[#E3E9E5] shrink-0 bg-white flex items-center justify-between">
           <Link
             href="/"
-            onClick={closeMobileNav}
+            prefetch={true}
+            onClick={() => {
+              setPendingHref("/");
+              closeMobileNav();
+            }}
             className="flex items-center gap-2.5 group"
           >
             <div className="w-9 h-9 rounded-xl bg-[#00993F] text-white flex items-center justify-center font-black text-xl shadow-md">
@@ -250,24 +258,28 @@ export function MobileDrawer({ currentUser }: MobileDrawerProps) {
             {/* Dashboard Link */}
             <Link
               href="/"
-              onClick={closeMobileNav}
+              prefetch={true}
+              onClick={() => {
+                setPendingHref("/");
+                closeMobileNav();
+              }}
               className={cn(
                 "flex items-center justify-between px-3 py-2.5 rounded-nested text-xs font-bold transition-all min-h-[44px]",
-                pathname === "/"
+                activePath === "/"
                   ? "bg-[#00993F] text-white shadow-nav-active font-extrabold"
                   : "text-slate-800 hover:bg-[#F0F4F2]"
               )}
             >
               <div className="flex items-center gap-2.5">
                 <LayoutDashboard
-                  className={cn("w-4 h-4", pathname === "/" ? "text-white" : "text-[#00993F]")}
+                  className={cn("w-4 h-4", activePath === "/" ? "text-white" : "text-[#00993F]")}
                 />
                 <span>Dashboard Command</span>
               </div>
               <span
                 className={cn(
                   "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase",
-                  pathname === "/" ? "bg-white/20 text-white" : "bg-[#EDF9F1] text-[#00682B]"
+                  activePath === "/" ? "bg-white/20 text-white" : "bg-[#EDF9F1] text-[#00682B]"
                 )}
               >
                 Live
@@ -282,7 +294,7 @@ export function MobileDrawer({ currentUser }: MobileDrawerProps) {
           {filteredSections.map((section) => {
             const isExpanded = searchQuery.trim() ? true : (openSections[section.id] ?? true);
             const isSectionActive = section.items.some(
-              (item) => pathname === item.href || pathname.startsWith(item.href)
+              (item) => activePath === item.href || activePath.startsWith(item.href)
             );
 
             return (
@@ -313,13 +325,18 @@ export function MobileDrawer({ currentUser }: MobileDrawerProps) {
                   <div className="mt-1 ml-2 pl-2 border-l border-[#E3E9E5] space-y-1">
                     {section.items.map((item, idx) => {
                       const isLast = idx === section.items.length - 1;
-                      const isActive = pathname === item.href || pathname.startsWith(item.href);
+                      const isActive =
+                        activePath === item.href || activePath.startsWith(item.href);
 
                       return (
                         <Link
                           key={item.href}
                           href={item.href}
-                          onClick={closeMobileNav}
+                          prefetch={true}
+                          onClick={() => {
+                            setPendingHref(item.href);
+                            closeMobileNav();
+                          }}
                           className={cn(
                             "flex items-center justify-between px-3 py-2 rounded-nested text-xs font-medium transition-all min-h-[40px]",
                             isActive

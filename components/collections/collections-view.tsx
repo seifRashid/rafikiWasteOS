@@ -267,8 +267,9 @@ export function CollectionsView({ initialJobs, clients = [], vehicles = [] }: Co
               : item
           )
         );
+        const batchNote = res.batch ? ` & Batch ${res.batch.batchNumber} added to Inventory` : "";
         showToast(
-          `Weighbridge verified: Net intake certified at ${formatWeight(res.netWeightKg, "kg")}.`
+          `Weighbridge verified: Net intake certified at ${formatWeight(res.netWeightKg, "kg")}${batchNote}.`
         );
         setSelectedJobForWeight(null);
         setGrossWeight("");
@@ -332,13 +333,32 @@ export function CollectionsView({ initialJobs, clients = [], vehicles = [] }: Co
       if (res.success) {
         setJobs((prev) =>
           prev.map((item) =>
-            item.job.id === jobId ? { ...item, job: { ...item.job, status: nextStatus } } : item
+            item.job.id === jobId
+              ? {
+                  ...item,
+                  job: {
+                    ...item.job,
+                    status: nextStatus,
+                    actualWeightKg: item.job.actualWeightKg || item.job.expectedQuantityKg,
+                  },
+                }
+              : item
           )
         );
-        showToast(`Job status transitioned to ${nextStatus.replace("_", " ")}.`);
+        const batchInfo = res.batch ? ` • Batch ${res.batch.batchNumber} synced to Inventory` : "";
+        showToast(`Job status transitioned to ${nextStatus.replace("_", " ")}${batchInfo}.`);
         if (selectedJobForDetail && selectedJobForDetail.job.id === jobId) {
           setSelectedJobForDetail((prev) =>
-            prev ? { ...prev, job: { ...prev.job, status: nextStatus } } : null
+            prev
+              ? {
+                  ...prev,
+                  job: {
+                    ...prev.job,
+                    status: nextStatus,
+                    actualWeightKg: prev.job.actualWeightKg || prev.job.expectedQuantityKg,
+                  },
+                }
+              : null
           );
         }
       } else {
@@ -720,20 +740,40 @@ export function CollectionsView({ initialJobs, clients = [], vehicles = [] }: Co
                           </button>
 
                           {job.status === "collected" && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setSelectedJobForWeight(job);
+                                  setGrossWeight(
+                                    (
+                                      parseFloat(tareWeight) +
+                                      parseFloat(job.expectedQuantityKg || "500")
+                                    ).toString()
+                                  );
+                                }}
+                                className="px-2.5 py-1 rounded-nested bg-[#EEFBFD] text-[#056E7C] border border-[#B6EEF5] text-[11px] font-bold hover:bg-[#D5F6FA] flex items-center gap-1 cursor-pointer"
+                              >
+                                <Scale className="w-3 h-3" />
+                                <span>Weigh In</span>
+                              </button>
+                              <button
+                                onClick={() => handleAdvanceStatus(job.id, "completed")}
+                                className="px-2.5 py-1 rounded-nested bg-[#EDF9F1] text-[#00682B] border border-[#ADE4C1] text-[11px] font-bold hover:bg-[#D3F3DE] flex items-center gap-1 cursor-pointer"
+                                title="Mark Completed & Auto-Sync to Inventory"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Complete</span>
+                              </button>
+                            </>
+                          )}
+
+                          {(job.status === "in_progress" || job.status === "assigned") && (
                             <button
-                              onClick={() => {
-                                setSelectedJobForWeight(job);
-                                setGrossWeight(
-                                  (
-                                    parseFloat(tareWeight) +
-                                    parseFloat(job.expectedQuantityKg || "500")
-                                  ).toString()
-                                );
-                              }}
-                              className="px-2.5 py-1 rounded-nested bg-[#EEFBFD] text-[#056E7C] border border-[#B6EEF5] text-[11px] font-bold hover:bg-[#D5F6FA] flex items-center gap-1 cursor-pointer"
+                              onClick={() => handleAdvanceStatus(job.id, "collected")}
+                              className="px-2.5 py-1 rounded-nested bg-[#EDF9F1] text-[#00682B] border border-[#ADE4C1] text-[11px] font-bold hover:bg-[#D3F3DE] flex items-center gap-1 cursor-pointer"
                             >
-                              <Scale className="w-3 h-3" />
-                              <span>Weigh In</span>
+                              <Check className="w-3 h-3" />
+                              <span>Mark Collected</span>
                             </button>
                           )}
 
@@ -934,22 +974,40 @@ export function CollectionsView({ initialJobs, clients = [], vehicles = [] }: Co
                   </button>
                 )}
 
-                {selectedJobForDetail.job.status === "collected" && (
+                {(selectedJobForDetail.job.status === "in_progress" ||
+                  selectedJobForDetail.job.status === "assigned") && (
                   <button
-                    onClick={() => {
-                      const job = selectedJobForDetail.job;
-                      setSelectedJobForDetail(null);
-                      setSelectedJobForWeight(job);
-                      setGrossWeight(
-                        (
-                          parseFloat(tareWeight) + parseFloat(job.expectedQuantityKg || "500")
-                        ).toString()
-                      );
-                    }}
-                    className="px-3.5 py-1.5 rounded-nested bg-[#08A6BA] text-white font-bold text-xs hover:bg-[#067382] cursor-pointer"
+                    onClick={() => handleAdvanceStatus(selectedJobForDetail.job.id, "collected")}
+                    className="px-3.5 py-1.5 rounded-nested bg-[#00993F] text-white font-bold text-xs hover:bg-[#008235] cursor-pointer"
                   >
-                    Weighbridge Net Intake
+                    Mark Collected
                   </button>
+                )}
+
+                {selectedJobForDetail.job.status === "collected" && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const job = selectedJobForDetail.job;
+                        setSelectedJobForDetail(null);
+                        setSelectedJobForWeight(job);
+                        setGrossWeight(
+                          (
+                            parseFloat(tareWeight) + parseFloat(job.expectedQuantityKg || "500")
+                          ).toString()
+                        );
+                      }}
+                      className="px-3.5 py-1.5 rounded-nested bg-[#08A6BA] text-white font-bold text-xs hover:bg-[#067382] cursor-pointer"
+                    >
+                      Weighbridge Net Intake
+                    </button>
+                    <button
+                      onClick={() => handleAdvanceStatus(selectedJobForDetail.job.id, "completed")}
+                      className="px-3.5 py-1.5 rounded-nested bg-[#00993F] text-white font-bold text-xs hover:bg-[#008235] cursor-pointer"
+                    >
+                      Verify & Complete
+                    </button>
+                  </>
                 )}
 
                 {selectedJobForDetail.job.status === "delivered" && (

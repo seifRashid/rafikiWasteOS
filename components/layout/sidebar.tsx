@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   LayoutDashboard,
@@ -12,35 +12,12 @@ import {
   DollarSign,
   BarChart3,
   Settings,
-  Smartphone,
   ChevronDown,
   ChevronRight,
-  CheckSquare,
-  MapPin,
-  Calendar,
-  Map,
-  FileText,
-  AlertCircle,
-  MessageSquare,
-  FileSpreadsheet,
-  Layers,
-  Scale,
-  Sparkles,
-  ArrowRightLeft,
-  Warehouse,
-  Flame,
-  Wrench,
-  Fuel,
-  Package,
-  ShieldCheck,
-  Building,
-  Sliders,
-  Shield,
-  Key,
   LogOut,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 
 interface NavSubItem {
@@ -71,6 +48,13 @@ interface SidebarProps {
 export function Sidebar({ className, currentUser }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
+  const activePath = pendingHref || pathname;
 
   const navSections: NavSection[] = [
     {
@@ -174,6 +158,9 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
     setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const isDashboardActive = activePath === "/";
+  const isDashboardLoading = pendingHref === "/" && pathname !== "/";
+
   return (
     <aside
       className={cn(
@@ -183,7 +170,14 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
     >
       {/* Brand Header */}
       <div className="p-4 border-b border-[#E3E9E5] shrink-0 bg-white">
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link
+          href="/"
+          prefetch={true}
+          onClick={() => {
+            if (pathname !== "/") setPendingHref("/");
+          }}
+          className="flex items-center gap-3 group"
+        >
           <div className="w-9 h-9 rounded-xl bg-[#00993F] text-white flex items-center justify-center font-black text-xl shadow-md group-hover:scale-105 transition-transform">
             R
           </div>
@@ -203,21 +197,31 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
         {/* Top-level Dashboard Link */}
         <Link
           href="/"
+          prefetch={true}
+          onClick={() => {
+            if (pathname !== "/") setPendingHref("/");
+          }}
           className={cn(
             "flex items-center justify-between px-3 py-2 rounded-nested text-xs font-bold transition-all",
-            pathname === "/"
+            isDashboardActive
               ? "bg-[#00993F] text-white shadow-nav-active font-extrabold"
               : "text-slate-800 hover:bg-[#F0F4F2]"
           )}
         >
           <div className="flex items-center gap-2.5">
-            <LayoutDashboard className={cn("w-4 h-4", pathname === "/" ? "text-white" : "text-[#00993F]")} />
+            {isDashboardLoading ? (
+              <Loader2 className="w-4 h-4 text-white animate-spin" />
+            ) : (
+              <LayoutDashboard
+                className={cn("w-4 h-4", isDashboardActive ? "text-white" : "text-[#00993F]")}
+              />
+            )}
             <span>Dashboard</span>
           </div>
           <span
             className={cn(
               "text-[9px] px-1.5 py-0.2 rounded-full font-bold uppercase",
-              pathname === "/" ? "bg-white/20 text-white" : "bg-[#EDF9F1] text-[#00682B]"
+              isDashboardActive ? "bg-white/20 text-white" : "bg-[#EDF9F1] text-[#00682B]"
             )}
           >
             Live
@@ -227,7 +231,9 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
         {/* 7 Operational Groups */}
         {navSections.map((section) => {
           const isOpen = openSections[section.id] ?? true;
-          const isSectionActive = section.items.some((item) => pathname === item.href || pathname.startsWith(item.href));
+          const isSectionActive = section.items.some(
+            (item) => activePath === item.href || activePath.startsWith(item.href)
+          );
 
           return (
             <div key={section.id} className="pt-1">
@@ -237,7 +243,12 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
                 className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-extrabold tracking-wider text-slate-500 hover:text-slate-900 transition-colors uppercase group"
               >
                 <div className="flex items-center gap-1.5">
-                  <span className={cn("w-1.5 h-1.5 rounded-full", isSectionActive ? "bg-[#00993F]" : "bg-slate-300")} />
+                  <span
+                    className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      isSectionActive ? "bg-[#00993F]" : "bg-slate-300"
+                    )}
+                  />
                   <span>{section.title}</span>
                 </div>
                 {isOpen ? (
@@ -252,12 +263,21 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
                 <div className="mt-1 ml-2 pl-2 border-l border-[#E3E9E5] space-y-0.5">
                   {section.items.map((item, idx) => {
                     const isLast = idx === section.items.length - 1;
-                    const isActive = pathname === item.href || pathname.startsWith(item.href);
+                    const isActive =
+                      activePath === item.href || activePath.startsWith(item.href);
+                    const isItemLoading =
+                      pendingHref === item.href &&
+                      pathname !== item.href &&
+                      !pathname.startsWith(item.href);
 
                     return (
                       <Link
                         key={item.href}
                         href={item.href}
+                        prefetch={true}
+                        onClick={() => {
+                          if (pathname !== item.href) setPendingHref(item.href);
+                        }}
                         className={cn(
                           "flex items-center justify-between px-2.5 py-1.5 rounded-nested text-xs font-medium transition-all group relative",
                           isActive
@@ -266,28 +286,42 @@ export function Sidebar({ className, currentUser }: SidebarProps) {
                         )}
                       >
                         <div className="flex items-center gap-2 truncate">
-                          <span className={cn("text-[10px] font-mono", isActive ? "text-white/70" : "text-slate-400")}>
+                          <span
+                            className={cn(
+                              "text-[10px] font-mono",
+                              isActive ? "text-white/70" : "text-slate-400"
+                            )}
+                          >
                             {isLast ? "└──" : "├──"}
                           </span>
                           <span className="truncate">{item.name}</span>
                         </div>
 
-                        {item.badge && (
-                          <span
-                            className={cn(
-                              "text-[9px] px-1.5 py-0.2 rounded-full font-bold",
-                              isActive
-                                ? "bg-white/20 text-white"
-                                : "bg-[#EDF9F1] text-[#00682B]"
-                            )}
-                          >
-                            {item.badge}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isItemLoading && (
+                            <Loader2 className="w-3 h-3 text-white animate-spin" />
+                          )}
 
-                        {item.alert && (
-                          <span className="w-2 h-2 rounded-full bg-[#FECA36] ring-2 ring-white" title="Attention" />
-                        )}
+                          {item.badge && (
+                            <span
+                              className={cn(
+                                "text-[9px] px-1.5 py-0.2 rounded-full font-bold",
+                                isActive
+                                  ? "bg-white/20 text-white"
+                                  : "bg-[#EDF9F1] text-[#00682B]"
+                              )}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+
+                          {item.alert && (
+                            <span
+                              className="w-2 h-2 rounded-full bg-[#FECA36] ring-2 ring-white"
+                              title="Attention"
+                            />
+                          )}
+                        </div>
                       </Link>
                     );
                   })}

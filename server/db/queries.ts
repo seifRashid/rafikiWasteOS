@@ -31,6 +31,7 @@ import {
 } from "./schema";
 import { eq, desc, and } from "drizzle-orm";
 import { deactivateExpiredContractsService } from "@/server/services/contract-expiration";
+import { syncAllCompletedJobsToInventory } from "@/server/services/inventory-intake-sync";
 
 // Fallback initial dataset for zero-crash resilience
 const fallbackClients: Client[] = [
@@ -173,16 +174,38 @@ const fallbackClients: Client[] = [
 
 export async function getDashboardData() {
   try {
-    const allClients = await db.select().from(clients).where(eq(clients.isDeleted, false));
-    if (allClients.length > 0) {
-      const activeClients = allClients.filter((c) => c.isActive);
-
-      const allJobs = await db
+    const [
+      allClients,
+      allJobs,
+      inventoryBatches,
+      allVehicles,
+      allInvoices,
+      allExpenses,
+      allRoutes,
+    ] = await Promise.all([
+      db.select().from(clients).where(eq(clients.isDeleted, false)),
+      db
         .select({ job: collectionJobs, client: clients })
         .from(collectionJobs)
         .leftJoin(clients, eq(collectionJobs.clientId, clients.id))
         .where(eq(collectionJobs.isDeleted, false))
-        .orderBy(desc(collectionJobs.scheduledAt));
+        .orderBy(desc(collectionJobs.scheduledAt)),
+      db
+        .select()
+        .from(recyclableInventory)
+        .where(eq(recyclableInventory.isDeleted, false)),
+      db.select().from(vehicles).where(eq(vehicles.isDeleted, false)),
+      db.select().from(invoices).where(eq(invoices.isDeleted, false)),
+      db.select().from(expenses).where(eq(expenses.isDeleted, false)),
+      db
+        .select()
+        .from(routes)
+        .where(eq(routes.isDeleted, false))
+        .orderBy(desc(routes.routeDate)),
+    ]);
+
+    if (allClients.length > 0) {
+      const activeClients = allClients.filter((c) => c.isActive);
 
       const todayStr = new Date().toISOString().split("T")[0];
       const completedJobsToday = allJobs.filter(
@@ -202,11 +225,6 @@ export async function getDashboardData() {
         if (job.wasteStream === "recyclable") recyclableWeightKg += weight;
       });
 
-      const inventoryBatches = await db
-        .select()
-        .from(recyclableInventory)
-        .where(eq(recyclableInventory.isDeleted, false));
-
       let recoveredTonnageKg = 0;
       let scrapSalesRevenue = 0;
 
@@ -222,12 +240,10 @@ export async function getDashboardData() {
         100
       );
 
-      const allVehicles = await db.select().from(vehicles).where(eq(vehicles.isDeleted, false));
       const operatingVehicles = allVehicles.filter(
         (v) => v.status === "active" || v.status === "in_transit"
       );
 
-      const allInvoices = await db.select().from(invoices).where(eq(invoices.isDeleted, false));
       let totalRevenue = scrapSalesRevenue;
       let outstandingDebt = 0;
 
@@ -237,17 +253,10 @@ export async function getDashboardData() {
         else if (inv.status === "pending" || inv.status === "overdue") outstandingDebt += amt;
       });
 
-      const allExpenses = await db.select().from(expenses).where(eq(expenses.isDeleted, false));
       let totalExpenses = 0;
       allExpenses.forEach((exp) => {
         totalExpenses += parseFloat(exp.amount);
       });
-
-      const allRoutes = await db
-        .select()
-        .from(routes)
-        .where(eq(routes.isDeleted, false))
-        .orderBy(desc(routes.routeDate));
 
       return {
         totalClients: allClients.length,
@@ -453,23 +462,25 @@ export async function getClientProfile(clientId: string) {
       console.warn("[getClientProfile] expiration sync notice:", e);
     }
 
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.isDeleted, false)))
-      .limit(1);
-    if (client) {
-      const clientJobs = await db
+    const [clientRows, clientJobs, clientInvoices] = await Promise.all([
+      db
+        .select()
+        .from(clients)
+        .where(and(eq(clients.id, clientId), eq(clients.isDeleted, false)))
+        .limit(1),
+      db
         .select()
         .from(collectionJobs)
         .where(and(eq(collectionJobs.clientId, clientId), eq(collectionJobs.isDeleted, false)))
-        .orderBy(desc(collectionJobs.scheduledAt));
-
-      const clientInvoices = await db
+        .orderBy(desc(collectionJobs.scheduledAt)),
+      db
         .select()
         .from(invoices)
         .where(and(eq(invoices.clientId, clientId), eq(invoices.isDeleted, false)))
-        .orderBy(desc(invoices.issueDate));
+        .orderBy(desc(invoices.issueDate)),
+    ]);
+    const [client] = clientRows;
+    if (client) {
 
       let totalTonnageKg = 0;
       let organicKg = 0;
@@ -699,6 +710,12 @@ export async function getRoutesWithAssignments() {
 
 export async function getInventorySummary() {
   try {
+    try {
+      await syncAllCompletedJobsToInventory();
+    } catch (syncErr) {
+      console.warn("[getInventorySummary] auto-sync notice:", syncErr);
+    }
+
     const batches = await db
       .select()
       .from(recyclableInventory)
@@ -798,17 +815,18 @@ export async function getAllRouteStops() {
 
 export async function getFleetAndAssets() {
   try {
-    const fleetVehicles = await db
-      .select()
-      .from(vehicles)
-      .where(eq(vehicles.isDeleted, false))
-      .orderBy(desc(vehicles.createdAt));
-
-    const fleetAssets = await db
-      .select()
-      .from(assets)
-      .where(eq(assets.isDeleted, false))
-      .orderBy(desc(assets.createdAt));
+    const [fleetVehicles, fleetAssets] = await Promise.all([
+      db
+        .select()
+        .from(vehicles)
+        .where(eq(vehicles.isDeleted, false))
+        .orderBy(desc(vehicles.createdAt)),
+      db
+        .select()
+        .from(assets)
+        .where(eq(assets.isDeleted, false))
+        .orderBy(desc(assets.createdAt)),
+    ]);
 
     if (fleetVehicles.length > 0) {
       return {
@@ -869,25 +887,25 @@ export async function getFleetAndAssets() {
 
 export async function getFinanceLedger() {
   try {
-    const allInvoices = await db
-      .select({ invoice: invoices, client: clients })
-      .from(invoices)
-      .leftJoin(clients, eq(invoices.clientId, clients.id))
-      .where(eq(invoices.isDeleted, false))
-      .orderBy(desc(invoices.issueDate));
-
-    const allExpenses = await db
-      .select({ expense: expenses, vehicle: vehicles })
-      .from(expenses)
-      .leftJoin(vehicles, eq(expenses.vehicleId, vehicles.id))
-      .where(eq(expenses.isDeleted, false))
-      .orderBy(desc(expenses.expenseDate));
-
-    const allProjects = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.isDeleted, false))
-      .orderBy(desc(projects.createdAt));
+    const [allInvoices, allExpenses, allProjects] = await Promise.all([
+      db
+        .select({ invoice: invoices, client: clients })
+        .from(invoices)
+        .leftJoin(clients, eq(invoices.clientId, clients.id))
+        .where(eq(invoices.isDeleted, false))
+        .orderBy(desc(invoices.issueDate)),
+      db
+        .select({ expense: expenses, vehicle: vehicles })
+        .from(expenses)
+        .leftJoin(vehicles, eq(expenses.vehicleId, vehicles.id))
+        .where(eq(expenses.isDeleted, false))
+        .orderBy(desc(expenses.expenseDate)),
+      db
+        .select()
+        .from(projects)
+        .where(eq(projects.isDeleted, false))
+        .orderBy(desc(projects.createdAt)),
+    ]);
 
     if (allInvoices.length > 0 || allExpenses.length > 0) {
       return {

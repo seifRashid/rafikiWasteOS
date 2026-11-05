@@ -88,6 +88,9 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
       steel_scrap: "Steel Scrap",
       glass_cullet: "Glass Cullet",
       electronic_waste: "Electronic Waste",
+      "RES-GEN": "Residual General Waste",
+      "HAZ-WST": "Hazardous Waste Stream",
+      "EWST-REC": "Electronic Waste Stream",
     };
     return legacyMap[codeOrType] || codeOrType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   };
@@ -307,8 +310,16 @@ export function InventoryView({ initialBatches, initialMaterials = [] }: Invento
             <tbody className="divide-y divide-[#F0F4F2]">
               {filteredBatches.map((batch) => (
                 <tr key={batch.id} className="hover:bg-[#F6F8F7] transition-colors">
-                  <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                    {batch.batchNumber}
+                  <td className="py-3.5 px-4">
+                    <div className="font-mono font-bold text-slate-900">{batch.batchNumber}</div>
+                    {batch.intakeJobId ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#00682B] bg-[#EDF9F1] px-1.5 py-0.5 rounded border border-[#ADE4C1] mt-0.5">
+                        <CheckCircle2 className="w-2.5 h-2.5 text-[#00993F]" />
+                        <span>Auto-Synced Collection</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-[#9CA3AF] block mt-0.5">Manual Depot Intake</span>
+                    )}
                   </td>
 
                   <td className="py-3.5 px-4">
