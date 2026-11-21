@@ -3,11 +3,14 @@ import { createNeonAuth } from "@neondatabase/auth/next/server";
 import { db } from "@/server/db";
 import { users, clients } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { getRuntimeEnvConfig } from "@/lib/env-config";
+
+const runtimeEnv = getRuntimeEnvConfig();
 
 export const auth = createNeonAuth({
-  baseUrl: process.env.NEON_AUTH_BASE_URL!,
+  baseUrl: runtimeEnv.neonAuthBaseUrl,
   cookies: {
-    secret: process.env.NEON_AUTH_COOKIE_SECRET || "rafiki_wasteos_auth_cookie_secret_key_938472910482_emerging_market",
+    secret: runtimeEnv.neonAuthCookieSecret,
     sessionDataTtl: 300,
   },
 });
