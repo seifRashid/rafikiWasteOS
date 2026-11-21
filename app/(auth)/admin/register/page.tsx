@@ -72,8 +72,7 @@ export default function AdminRegisterPage() {
       }
 
       // 3. Immediately active, redirect to Executive Dashboard
-      router.push("/");
-      router.refresh();
+      window.location.assign("/");
     } catch (err: unknown) {
       console.error("[Admin Register Error]:", err);
       setError("An unexpected error occurred during administrator enrollment.");

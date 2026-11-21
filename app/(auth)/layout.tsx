@@ -11,7 +11,7 @@ export default function AuthLayout({
     <div className="min-h-screen w-full bg-[#F6F8F7] flex flex-col justify-between selection:bg-[#00993F]/20 selection:text-[#00993F]">
       {/* Top Brand Bar */}
       <header className="w-full px-6 py-4 flex items-center justify-between border-b border-[#E3E9E5]/80 bg-white/70 backdrop-blur-md sticky top-0 z-50">
-        <Link href="/" className="flex items-center gap-2.5 group transition-transform active:scale-98">
+        <Link href="/" prefetch={false} className="flex items-center gap-2.5 group transition-transform active:scale-98">
           <div className="w-10 h-10 rounded-[14px] bg-[#00993F] flex items-center justify-center text-white shadow-md shadow-[#00993F]/25 group-hover:bg-[#008235] transition-colors">
             <Recycle className="w-5 h-5 animate-[spin_12s_linear_infinite]" />
           </div>

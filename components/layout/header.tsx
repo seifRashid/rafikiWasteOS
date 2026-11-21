@@ -214,7 +214,7 @@ export function Header({ currentUser }: HeaderProps) {
                   onClick={async () => {
                     setShowUserMenu(false);
                     await authClient.signOut();
-                    router.push("/login");
+                    window.location.assign("/login");
                   }}
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[10px] text-xs font-semibold text-[#DC2626] hover:bg-[#FEE2E2] transition-colors cursor-pointer text-left"
                 >

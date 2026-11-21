@@ -77,21 +77,19 @@ function LoginForm() {
           return;
         }
 
-        router.push("/portal");
-        router.refresh();
+        window.location.assign("/portal");
         return;
       }
 
       if (statusRes.status === "pending_approval") {
-        router.push("/pending-approval");
+        window.location.assign("/pending-approval");
       } else if (statusRes.status === "suspended" || statusRes.status === "inactive") {
         setError("Your account is currently suspended. Please contact your operations supervisor.");
         await authClient.signOut();
         setLoading(false);
         return;
       } else {
-        router.push("/");
-        router.refresh();
+        window.location.assign("/");
       }
     } catch (err: unknown) {
       console.error("[Login Error]:", err);

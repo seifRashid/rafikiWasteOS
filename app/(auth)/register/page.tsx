@@ -73,7 +73,7 @@ export default function RegisterPage() {
       }
 
       // 3. User is registered as normal user, now routed to pending approval status screen
-      router.push("/pending-approval");
+      window.location.assign("/pending-approval");
     } catch (err: unknown) {
       console.error("[Register Error]:", err);
       setError("An unexpected error occurred during account creation. Please try again.");

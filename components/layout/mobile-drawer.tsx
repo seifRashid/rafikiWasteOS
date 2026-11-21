@@ -422,7 +422,7 @@ export function MobileDrawer({ currentUser }: MobileDrawerProps) {
               onClick={async () => {
                 await authClient.signOut();
                 closeMobileNav();
-                router.push("/login");
+                window.location.assign("/login");
               }}
               title="Sign Out"
               className="p-1.5 rounded-md text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEE2E2] transition-colors cursor-pointer shrink-0"

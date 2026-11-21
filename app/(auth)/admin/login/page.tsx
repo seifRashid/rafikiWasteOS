@@ -62,8 +62,7 @@ export default function AdminLoginPage() {
         return;
       }
 
-      router.push("/");
-      router.refresh();
+      window.location.assign("/");
     } catch (err: unknown) {
       console.error("[Admin Login Error]:", err);
       setError("An unexpected error occurred during administrative verification.");
