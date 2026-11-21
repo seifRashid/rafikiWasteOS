@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "npx tsx server/db/seed.ts && npx tsx scripts/seed-demo-users.ts && npx tsx scripts/seed-operational-data.ts && npx tsx scripts/init-customer-support-tables.ts && npx tsx scripts/update-client-days.ts"
   },
   "dependencies": {
     "@neon/config": "^1.7.2",
