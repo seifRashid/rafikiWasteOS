@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { useMobileNav } from "./mobile-nav-context";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
+import { PwaInstallButton } from "@/components/pwa/pwa-install-button";
 
 interface HeaderProps {
   currentUser?: {
@@ -101,7 +102,10 @@ export function Header({ currentUser }: HeaderProps) {
       </div>
 
       {/* Right Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* PWA Install App Button (shown when installable on mobile or desktop) */}
+        <PwaInstallButton compact />
+
         {/* Notification Bell with Dropdown */}
         <div className="relative">
           <button

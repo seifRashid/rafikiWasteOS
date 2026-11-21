@@ -32,7 +32,7 @@ export function MobileNav() {
   ];
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E3E9E5] px-2 py-1.5 flex items-center justify-around shadow-sm">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E3E9E5] px-2 pt-1.5 pb-1.5 pwa-safe-bottom flex items-center justify-around shadow-sm">
       {links.slice(0, 2).map((link) => {
         const isActive =
           link.href === "/" ? activePath === "/" : activePath.startsWith(link.href);

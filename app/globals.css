@@ -94,3 +94,19 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #00993F;
 }
+
+/* PWA Standalone & Mobile Safe-Area Support */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .pwa-safe-bottom {
+    padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+  }
+  .pwa-safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: none;
+  }
+}

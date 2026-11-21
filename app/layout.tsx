@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { PwaProvider } from "@/components/pwa/pwa-context";
+import { PwaStatusBanner } from "@/components/pwa/pwa-status-banner";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -15,9 +17,37 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#00993F",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
+  applicationName: "Rafiki WasteOS",
   title: "Rafiki WasteOS — Waste & Circular Economy Management Platform",
-  description: "Enterprise Circular Economy ERP & Field Operations for Waste Haulers, Recyclers, and Environmental Organisations",
+  description:
+    "Enterprise Circular Economy ERP & Field Operations for Waste Haulers, Recyclers, and Environmental Organisations",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Rafiki WasteOS",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({
@@ -35,7 +65,10 @@ export default function RootLayout({
         suppressHydrationWarning
         className="min-h-full font-sans bg-[#F6F8F7] text-[#111827] flex flex-col"
       >
-        {children}
+        <PwaProvider>
+          <PwaStatusBanner />
+          {children}
+        </PwaProvider>
       </body>
     </html>
   );

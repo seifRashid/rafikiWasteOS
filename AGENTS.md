@@ -488,17 +488,24 @@ Waste operations generate thousands of proof-of-collection photos, damaged bin i
 
 ---
 
-## 12. PWA & Offline-First Field Operations
+## 12. PWA & Offline-First Field Operations (Mandatory Permanent Standard)
 
-The core principle states: *"If a waste company can run its daily operations from a phone, the software is doing its job."* In African and emerging-market cities, drivers operate in low-connectivity zones (industrial scrap yards, peri-urban routes, transfer stations).
+The core principle states: *"If a waste company can run its daily operations from a phone, the software is doing its job."* **PWA compatibility is a permanent, non-negotiable engineering requirement for every new feature, page, and enhancement** — not a one-time task.
 
-### Offline Requirements for Field Teams
-1. **Route Caching:** At the start of a shift, the driver's mobile PWA downloads today's scheduled route and client manifest to local **IndexedDB**.
-2. **Offline Data Capture:** Drivers can record actual weight, capture GPS coordinates, take photos, and mark jobs as `Collected` without an active internet connection.
-3. **Background Sync:** The Service Worker queues offline mutations in IndexedDB. Once connectivity is restored, the queue replays Server Actions sequentially to synchronize with Neon PostgreSQL.
-4. **Visual Sync Indicator:** A persistent pill badge in the mobile header indicates sync status:
-   * Green dot: *"En ligne — Synchronisé"*
-   * Amber pulse: *"3 collectes en attente de synchronisation"*
+### Mandatory PWA Compatibility Rules for All Future Features
+1. **Cross-Platform Installability & Standalone Mode:**
+   * Keep `app/manifest.ts`, `public/sw.js`, and `public/icons/` intact so the app remains installable on Android, iOS, Windows, and macOS in `standalone` window mode.
+   * Respect safe-area insets (`pwa-safe-top`, `pwa-safe-bottom`) on fixed headers, bottom navigation bars, and sticky modals.
+2. **Mobile-First & Touch-Friendly UI:**
+   * Every new screen and modal must be fully responsive across mobile (`360px+`), tablet, and desktop viewports.
+   * All interactive buttons, nav links, and form controls must have touch-friendly tap targets (`min-h-[40px]`–`44px` on mobile) and never depend solely on hover-only desktop interactions.
+3. **Graceful Offline, Loading & Error States:**
+   * Every route must support clean loading skeletons (`loading.tsx`), empty states, and user-friendly network failure handling when connectivity drops.
+   * Use `usePwa()` (`components/pwa/pwa-context.tsx`) when a feature needs live connectivity awareness (`isOnline`) or reconnection refresh.
+4. **Strict Caching Security:**
+   * **NEVER** cache `/api/auth/*`, `/api/*`, Server Actions (`Next-Action`), RSC payloads, or authenticated user-specific HTML pages in Service Worker Cache Storage. Cache only immutable static assets (`/_next/static/*`, `/icons/*`, fonts) and the `/offline` fallback.
+5. **Field Operations Continuity:**
+   * Drivers and field staff operate in low-connectivity zones (scrap yards, transfer stations, peri-urban routes). All mutations must handle transient network interruptions gracefully and recover cleanly when connectivity is restored.
 
 ---
 
