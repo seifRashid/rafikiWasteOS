@@ -1703,4 +1703,26 @@ export async function getContainerAllocations() {
   };
 }
 
+export async function getInvoiceById(id: string): Promise<{
+  invoice: Invoice;
+  client: Client | null;
+} | null> {
+  try {
+    const rows = await db
+      .select({
+        invoice: invoices,
+        client: clients,
+      })
+      .from(invoices)
+      .leftJoin(clients, eq(invoices.clientId, clients.id))
+      .where(and(eq(invoices.id, id), eq(invoices.isDeleted, false)))
+      .limit(1);
+
+    return rows[0] ?? null;
+  } catch (error) {
+    console.warn("[DB_QUERY_ERROR: getInvoiceById]", error);
+    return null;
+  }
+}
+
 export { getDriverPortalData, type DriverPortalData, type DriverStop } from "./driver-queries";
