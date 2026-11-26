@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   "/pending-approval",
   "/driver",
   "/offline",
+  "/invoice",
 ];
 
 export default async function proxy(request: NextRequest) {

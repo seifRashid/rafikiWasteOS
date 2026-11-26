@@ -31,7 +31,7 @@ export function buildInvoiceQrPayload(
     origin || (typeof window !== "undefined" ? window.location.origin : "");
 
   if (baseUrl) {
-    return `${baseUrl}/finance/invoices/${invoice.id}?inv=${encodeURIComponent(
+    return `${baseUrl}/invoice/${invoice.id}?inv=${encodeURIComponent(
       invoice.invoiceNumber
     )}`;
   }
