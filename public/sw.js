@@ -5,9 +5,13 @@
 // - Static assets (/_next/static/*, /icons/*, fonts, images) use Cache-First.
 // - Document navigations use Network-First with a branded /offline fallback.
 
-const SW_VERSION = "rafiki-wasteos-v1";
+const SW_VERSION = "rafiki-wasteos-v2";
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const OFFLINE_URL = "/offline";
+const IS_LOCALHOST =
+  self.location.hostname === "localhost" ||
+  self.location.hostname === "127.0.0.1" ||
+  self.location.hostname === "[::1]";
 
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -52,6 +56,12 @@ self.addEventListener("message", (event) => {
 });
 
 function isStaticAsset(pathname) {
+  // Never cache Next.js dev bundles or HMR chunks on localhost, because dev chunk
+  // filenames are not content-hashed and Cache-First causes stale hydration mismatches.
+  if (IS_LOCALHOST && (pathname.startsWith("/_next/") || /\.(?:js|css)$/i.test(pathname))) {
+    return false;
+  }
+
   return (
     pathname.startsWith("/_next/static/") ||
     pathname.startsWith("/icons/") ||
