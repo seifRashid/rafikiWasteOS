@@ -41,31 +41,39 @@ export default async function FinancePaymentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F0F4F2]">
-              {paidInvoices.map(({ invoice, client }) => (
-                <tr key={invoice.id} className="hover:bg-[#F6F8F7] transition-colors">
-                  <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                    {invoice.paymentReference || "EFT-08912"}
-                  </td>
-                  <td className="py-3.5 px-4 font-bold text-slate-900">
-                    {client?.name || "Client"}
-                  </td>
-                  <td className="py-3.5 px-4 font-medium text-slate-700">
-                    {invoice.paymentMethod || "M-Pesa Business Till"}
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-extrabold text-[#00993F]">
-                    {formatCurrency(invoice.amount, "KES")}
-                  </td>
-                  <td className="py-3.5 px-4 text-[#4B5563]">
-                    {formatDate(invoice.paidDate || invoice.dueDate)}
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00682B]">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#00993F]" />
-                      <span>Reconciled</span>
-                    </span>
+              {paidInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-[#9CA3AF]">
+                    No reconciled client payments recorded yet.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                paidInvoices.map(({ invoice, client }) => (
+                  <tr key={invoice.id} className="hover:bg-[#F6F8F7] transition-colors">
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                      {invoice.paymentReference || "—"}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900">
+                      {client?.name || "Client"}
+                    </td>
+                    <td className="py-3.5 px-4 font-medium text-slate-700">
+                      {invoice.paymentMethod || "—"}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-extrabold text-[#00993F]">
+                      {formatCurrency(invoice.amount, "KES")}
+                    </td>
+                    <td className="py-3.5 px-4 text-[#4B5563]">
+                      {formatDate(invoice.paidDate || invoice.dueDate)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00682B]">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#00993F]" />
+                        <span>Reconciled</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

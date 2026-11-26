@@ -11,6 +11,7 @@ export default async function FinanceOverviewPage() {
       initialInvoices={ledger.invoices}
       initialExpenses={ledger.expenses}
       initialProjects={ledger.projects}
+      initialScrapSales={ledger.scrapSales}
     />
   );
 }

@@ -18,6 +18,7 @@ import {
   Scale,
   ShieldCheck,
   Search,
+  Recycle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
@@ -27,7 +28,14 @@ import {
   markInvoicePaidAction,
   createExpenseAction,
 } from "@/server/actions/finance";
-import type { Invoice, Expense, Project, Client, Vehicle } from "@/server/db/schema";
+import type {
+  Invoice,
+  Expense,
+  Project,
+  Client,
+  Vehicle,
+  RecyclableInventory,
+} from "@/server/db/schema";
 
 interface InvoiceWithClient {
   invoice: Invoice;
@@ -39,22 +47,35 @@ interface ExpenseWithVehicle {
   vehicle: Vehicle | null;
 }
 
+type ExpenseCategory =
+  | "fuel"
+  | "vehicle_maintenance"
+  | "salaries_wages"
+  | "ppe_safety"
+  | "licences_compliance"
+  | "depot_rent_utilities";
+
 interface FinanceViewProps {
   initialInvoices: InvoiceWithClient[];
   initialExpenses: ExpenseWithVehicle[];
   initialProjects: Project[];
+  initialScrapSales?: RecyclableInventory[];
 }
 
 export function FinanceView({
   initialInvoices,
   initialExpenses,
   initialProjects,
+  initialScrapSales = [],
 }: FinanceViewProps) {
   const [invoicesList, setInvoicesList] = useState<InvoiceWithClient[]>(initialInvoices);
   const [expensesList, setExpensesList] = useState<ExpenseWithVehicle[]>(initialExpenses);
-  const [projectsList, setProjectsList] = useState<Project[]>(initialProjects);
+  const [projectsList] = useState<Project[]>(initialProjects);
+  const [scrapSalesList] = useState<RecyclableInventory[]>(initialScrapSales);
 
-  const [activeTab, setActiveTab] = useState<"invoices" | "expenses" | "projects">("invoices");
+  const [activeTab, setActiveTab] = useState<"invoices" | "scrap" | "expenses" | "projects">(
+    "invoices"
+  );
 
   // Payment Recording Modal
   const [selectedInvoiceForPay, setSelectedInvoiceForPay] = useState<Invoice | null>(null);
@@ -64,30 +85,42 @@ export function FinanceView({
 
   // New Expense Modal
   const [isExpenseOpen, setIsExpenseOpen] = useState(false);
-  const [expCategory, setExpCategory] = useState<any>("fuel");
+  const [expCategory, setExpCategory] = useState<ExpenseCategory>("fuel");
   const [expAmount, setExpAmount] = useState("");
   const [expDesc, setExpDesc] = useState("");
-  const [expPaidTo, setExpPaidTo] = useState("Total Kenya");
+  const [expPaidTo, setExpPaidTo] = useState("");
   const [expLoading, setExpLoading] = useState(false);
 
-  // Financial aggregates
-  let totalBilled = 0;
-  let totalPaid = 0;
+  // Financial aggregates (strictly computed from live database records)
+  let paidInvoicesTotal = 0;
+  let paidInvoicesCount = 0;
   let totalPending = 0;
+  let pendingCount = 0;
 
   invoicesList.forEach(({ invoice }) => {
-    const amt = parseFloat(invoice.amount);
-    totalBilled += amt;
-    if (invoice.status === "paid") totalPaid += amt;
-    if (invoice.status === "pending" || invoice.status === "overdue") totalPending += amt;
+    const amt = parseFloat(invoice.amount || "0");
+    if (invoice.status === "paid") {
+      paidInvoicesTotal += amt;
+      paidInvoicesCount++;
+    } else if (invoice.status === "pending" || invoice.status === "overdue") {
+      totalPending += amt;
+      pendingCount++;
+    }
   });
+
+  let scrapSalesTotal = 0;
+  scrapSalesList.forEach((batch) => {
+    scrapSalesTotal += parseFloat(batch.totalRevenue || "0");
+  });
+
+  const totalRevenueCollected = paidInvoicesTotal + scrapSalesTotal;
 
   let totalExpensesAmt = 0;
   expensesList.forEach(({ expense }) => {
-    totalExpensesAmt += parseFloat(expense.amount);
+    totalExpensesAmt += parseFloat(expense.amount || "0");
   });
 
-  const netCashflow = totalPaid - totalExpensesAmt;
+  const netCashflow = totalRevenueCollected - totalExpensesAmt;
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,8 +220,8 @@ export function FinanceView({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Revenue Collected"
-          value={formatCurrency(totalPaid, "KES", true)}
-          subtitle={`${invoicesList.filter((i) => i.invoice.status === "paid").length} paid invoices`}
+          value={formatCurrency(totalRevenueCollected, "KES", true)}
+          subtitle={`${paidInvoicesCount} paid ${paidInvoicesCount === 1 ? "invoice" : "invoices"} + ${scrapSalesList.length} scrap ${scrapSalesList.length === 1 ? "sale" : "sales"}`}
           icon={<TrendingUp className="w-5 h-5" />}
           accentColor="primary"
         />
@@ -196,7 +229,7 @@ export function FinanceView({
         <StatCard
           title="Outstanding Receivables"
           value={formatCurrency(totalPending, "KES", true)}
-          subtitle="Pending client collection fees"
+          subtitle={`${pendingCount} pending ${pendingCount === 1 ? "invoice" : "invoices"}`}
           icon={<Clock className="w-5 h-5" />}
           accentColor="amber"
         />
@@ -204,7 +237,7 @@ export function FinanceView({
         <StatCard
           title="Operating Expenses"
           value={formatCurrency(totalExpensesAmt, "KES", true)}
-          subtitle="Fuel, maintenance & wages"
+          subtitle={`${expensesList.length} logged ${expensesList.length === 1 ? "expense" : "expenses"}`}
           icon={<TrendingDown className="w-5 h-5" />}
           accentColor="neutral"
         />
@@ -212,7 +245,7 @@ export function FinanceView({
         <StatCard
           title="Net Cashflow"
           value={formatCurrency(netCashflow, "KES", true)}
-          subtitle="Operating operating margin"
+          subtitle="Revenue collected minus OPEX"
           icon={<DollarSign className="w-5 h-5" />}
           accentColor={netCashflow >= 0 ? "primary" : "amber"}
           trend={{
@@ -223,7 +256,7 @@ export function FinanceView({
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-[#E3E9E5] pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#E3E9E5] pb-2">
         <button
           onClick={() => setActiveTab("invoices")}
           className={`flex items-center gap-2 px-4 py-2 rounded-nested text-xs font-bold transition-all ${
@@ -234,6 +267,18 @@ export function FinanceView({
         >
           <FileText className="w-4 h-4" />
           <span>Customer Invoices & Payments ({invoicesList.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("scrap")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-nested text-xs font-bold transition-all ${
+            activeTab === "scrap"
+              ? "bg-[#00993F] text-white shadow-sm"
+              : "text-[#4B5563] hover:bg-[#F0F4F2]"
+          }`}
+        >
+          <Recycle className="w-4 h-4" />
+          <span>Scrap Sales Revenue ({scrapSalesList.length})</span>
         </button>
 
         <button
@@ -345,6 +390,67 @@ export function FinanceView({
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Scrap Sales Revenue Tab Table */}
+      {activeTab === "scrap" && (
+        <div className="bg-white rounded-card border border-[#E3E9E5] shadow-card-elevated overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#F6F8F7] border-b border-[#E3E9E5]">
+                <tr className="text-[#4B5563] font-semibold">
+                  <th className="py-3 px-4">Batch #</th>
+                  <th className="py-3 px-4">Material</th>
+                  <th className="py-3 px-4">Buyer / Offtaker</th>
+                  <th className="py-3 px-4">Weight</th>
+                  <th className="py-3 px-4">Unit Rate</th>
+                  <th className="py-3 px-4">Revenue</th>
+                  <th className="py-3 px-4 text-right">Stage</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F0F4F2]">
+                {scrapSalesList.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-[#9CA3AF]">
+                      No recyclable scrap sales recorded yet.
+                    </td>
+                  </tr>
+                ) : (
+                  scrapSalesList.map((batch) => (
+                    <tr key={batch.id} className="hover:bg-[#F6F8F7] transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                        {batch.batchNumber}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-900">{batch.materialType}</div>
+                        <div className="text-[11px] text-[#4B5563]">{batch.gradeQuality}</div>
+                      </td>
+                      <td className="py-3.5 px-4 font-medium text-slate-800">
+                        {batch.buyerName || "—"}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-slate-700">
+                        {formatWeight(batch.sortedWeightKg || batch.collectedWeightKg, "kg")}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-[#4B5563]">
+                        {batch.unitSellingPrice
+                          ? `${formatCurrency(batch.unitSellingPrice, "KES")}/kg`
+                          : "—"}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-extrabold text-[#00993F]">
+                        {formatCurrency(batch.totalRevenue || "0", "KES")}
+                      </td>
+                      <td className="py-3.5 px-4 text-right capitalize">
+                        <Badge variant="primary" dot>
+                          {batch.stage}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -603,7 +709,7 @@ export function FinanceView({
                 </label>
                 <select
                   value={expCategory}
-                  onChange={(e) => setExpCategory(e.target.value)}
+                  onChange={(e) => setExpCategory(e.target.value as ExpenseCategory)}
                   className="w-full p-2.5 rounded-nested border border-[#E3E9E5] bg-white focus:outline-none focus:border-[#00993F]"
                 >
                   <option value="fuel">Diesel & Vehicle Fuel</option>

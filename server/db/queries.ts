@@ -193,7 +193,8 @@ export async function getDashboardData() {
       db
         .select()
         .from(recyclableInventory)
-        .where(eq(recyclableInventory.isDeleted, false)),
+        .where(eq(recyclableInventory.isDeleted, false))
+        .orderBy(desc(recyclableInventory.createdAt)),
       db.select().from(vehicles).where(eq(vehicles.isDeleted, false)),
       db.select().from(invoices).where(eq(invoices.isDeleted, false)),
       db.select().from(expenses).where(eq(expenses.isDeleted, false)),
@@ -204,232 +205,253 @@ export async function getDashboardData() {
         .orderBy(desc(routes.routeDate)),
     ]);
 
-    if (allClients.length > 0) {
-      const activeClients = allClients.filter((c) => c.isActive);
+    const activeClients = allClients.filter((c) => c.isActive);
 
-      const todayStr = new Date().toISOString().split("T")[0];
-      const completedJobsToday = allJobs.filter(
-        (j) =>
-          (j.job.status === "completed" || j.job.status === "delivered") &&
-          j.job.scheduledAt.toISOString().startsWith(todayStr)
-      );
+    const todayStr = new Date().toISOString().split("T")[0];
+    const completedJobsAll = allJobs.filter((j) =>
+      ["collected", "delivered", "completed"].includes(j.job.status)
+    );
+    const completedJobsToday = completedJobsAll.filter((j) =>
+      j.job.scheduledAt.toISOString().startsWith(todayStr)
+    );
+    const missedJobs = allJobs.filter((j) => j.job.status === "missed");
 
-      let totalWeightCollectedKg = 0;
-      let organicWeightKg = 0;
-      let recyclableWeightKg = 0;
+    let totalWeightCollectedKg = 0;
+    let organicWeightKg = 0;
+    let recyclableWeightKg = 0;
 
-      allJobs.forEach(({ job }) => {
-        const weight = parseFloat(job.actualWeightKg || job.expectedQuantityKg || "0");
-        totalWeightCollectedKg += weight;
-        if (job.wasteStream === "organic") organicWeightKg += weight;
-        if (job.wasteStream === "recyclable") recyclableWeightKg += weight;
-      });
+    allJobs.forEach(({ job }) => {
+      const weight = parseFloat(job.actualWeightKg || job.expectedQuantityKg || "0");
+      totalWeightCollectedKg += weight;
+      if (job.wasteStream === "organic") organicWeightKg += weight;
+      if (job.wasteStream === "recyclable") recyclableWeightKg += weight;
+    });
 
-      let recoveredTonnageKg = 0;
-      let scrapSalesRevenue = 0;
+    let recoveredTonnageKg = 0;
+    let scrapSalesRevenue = 0;
 
-      inventoryBatches.forEach((b) => {
-        const sorted = parseFloat(b.sortedWeightKg || b.collectedWeightKg || "0");
-        recoveredTonnageKg += sorted;
-        if (b.totalRevenue) scrapSalesRevenue += parseFloat(b.totalRevenue);
-      });
+    inventoryBatches.forEach((b) => {
+      const sorted = parseFloat(b.sortedWeightKg || b.collectedWeightKg || "0");
+      recoveredTonnageKg += sorted;
+      if (b.totalRevenue) scrapSalesRevenue += parseFloat(b.totalRevenue);
+    });
 
-      const totalCollectedForCalc = Math.max(totalWeightCollectedKg, 1);
-      const diversionRate = Math.min(
-        Math.round(((organicWeightKg + recyclableWeightKg) / totalCollectedForCalc) * 1000) / 10,
-        100
-      );
+    const diversionRate =
+      totalWeightCollectedKg > 0
+        ? Math.min(
+            Math.round(((organicWeightKg + recyclableWeightKg) / totalWeightCollectedKg) * 1000) /
+              10,
+            100
+          )
+        : 0;
 
-      const operatingVehicles = allVehicles.filter(
-        (v) => v.status === "active" || v.status === "in_transit"
-      );
+    const operatingVehicles = allVehicles.filter(
+      (v) => v.status === "active" || v.status === "in_transit"
+    );
 
-      let totalRevenue = scrapSalesRevenue;
-      let outstandingDebt = 0;
+    let paidInvoicesRevenue = 0;
+    let outstandingDebt = 0;
+    let pendingInvoicesCount = 0;
+    let overdueInvoicesCount = 0;
 
-      allInvoices.forEach((inv) => {
-        const amt = parseFloat(inv.amount);
-        if (inv.status === "paid") totalRevenue += amt;
-        else if (inv.status === "pending" || inv.status === "overdue") outstandingDebt += amt;
-      });
+    allInvoices.forEach((inv) => {
+      const amt = parseFloat(inv.amount);
+      if (inv.status === "paid") {
+        paidInvoicesRevenue += amt;
+      } else if (inv.status === "pending" || inv.status === "overdue") {
+        outstandingDebt += amt;
+        pendingInvoicesCount++;
+        if (inv.status === "overdue") overdueInvoicesCount++;
+      }
+    });
 
-      let totalExpenses = 0;
-      allExpenses.forEach((exp) => {
-        totalExpenses += parseFloat(exp.amount);
-      });
+    const totalRevenue = paidInvoicesRevenue + scrapSalesRevenue;
 
-      return {
-        totalClients: allClients.length,
-        activeClients: activeClients.length,
-        completedTodayCount: completedJobsToday.length || 3,
-        totalJobsCount: allJobs.length || 6,
-        totalWeightCollectedKg,
-        organicWeightKg,
-        recyclableWeightKg,
-        recoveredTonnageKg,
-        diversionRate: diversionRate || 68.4,
-        operatingVehiclesCount: operatingVehicles.length || 3,
-        totalVehiclesCount: allVehicles.length || 4,
-        totalRevenue: totalRevenue || 1840000,
-        totalExpenses: totalExpenses || 620000,
-        outstandingDebt: outstandingDebt || 348000,
-        serviceAlerts: allVehicles.filter(
-          (v) => v.nextServiceKm - v.currentMileageKm <= 500 && v.nextServiceKm - v.currentMileageKm > 0
-        ),
-        recentJobs: allJobs.slice(0, 6),
-        activeRoutes: allRoutes.slice(0, 3),
-        inventoryBatches: inventoryBatches.slice(0, 5),
-      };
-    }
+    let totalExpenses = 0;
+    allExpenses.forEach((exp) => {
+      totalExpenses += parseFloat(exp.amount);
+    });
+
+    return {
+      totalClients: allClients.length,
+      activeClients: activeClients.length,
+      clientsList: activeClients.map((c) => ({ id: c.id, name: c.name })),
+      completedJobsCount: completedJobsAll.length,
+      completedTodayCount: completedJobsToday.length,
+      missedJobsCount: missedJobs.length,
+      totalJobsCount: allJobs.length,
+      totalWeightCollectedKg,
+      organicWeightKg,
+      recyclableWeightKg,
+      recoveredTonnageKg,
+      diversionRate,
+      operatingVehiclesCount: operatingVehicles.length,
+      totalVehiclesCount: allVehicles.length,
+      paidInvoicesRevenue,
+      scrapSalesRevenue,
+      totalRevenue,
+      totalExpenses,
+      outstandingDebt,
+      pendingInvoicesCount,
+      overdueInvoicesCount,
+      serviceAlerts: allVehicles.filter(
+        (v) => v.nextServiceKm - v.currentMileageKm <= 500 && v.nextServiceKm - v.currentMileageKm > 0
+      ),
+      recentJobs: allJobs.slice(0, 6),
+      activeRoutes: allRoutes.slice(0, 3),
+      inventoryBatches,
+    };
   } catch (error) {
     console.warn("[DB_QUERY_FALLBACK: getDashboardData]", error);
   }
 
-  // Graceful fallback state with realistic figures
+  // Fallback only if DB connection itself fails
   return {
-    totalClients: 7,
-    activeClients: 7,
-    completedTodayCount: 3,
-    totalJobsCount: 6,
-    totalWeightCollectedKg: 4230,
-    organicWeightKg: 1620,
-    recyclableWeightKg: 2610,
-    recoveredTonnageKg: 2890,
-    diversionRate: 68.4,
-    operatingVehiclesCount: 3,
-    totalVehiclesCount: 4,
-    totalRevenue: 1840000,
-    totalExpenses: 620000,
-    outstandingDebt: 348000,
-    serviceAlerts: [],
-    recentJobs: [
-      {
-        job: {
-          id: "j-01",
-          jobNumber: "JOB-2026-0891",
-          clientId: "clt-01",
-          routeId: "rt-01",
-          vehicleId: "v-01",
-          driverName: "Mohammed Bakari",
-          wasteStream: "organic" as const,
-          stopSequence: 1,
-          expectedQuantityKg: "1200.00",
-          grossWeightKg: "11850.00",
-          tareWeightKg: "10550.00",
-          actualWeightKg: "1300.00",
-          scheduledAt: new Date(),
-          collectedAt: new Date(),
-          deliveredAt: new Date(),
-          status: "completed" as const,
-          missedReason: null,
-          gpsLatitude: "-1.222384",
-          gpsLongitude: "36.878912",
-          proofPhotoUrl: null,
-          ticketPhotoUrl: null,
-          binCondition: "Normal",
-          clientSignatureName: "D. Kariuki",
-          notes: "Breakfast organics composted",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          isDeleted: false,
-          deletedAt: null,
-        },
-        client: fallbackClients[0],
-      },
-      {
-        job: {
-          id: "j-02",
-          jobNumber: "JOB-2026-0892",
-          clientId: "clt-03",
-          routeId: "rt-01",
-          vehicleId: "v-01",
-          driverName: "Mohammed Bakari",
-          wasteStream: "recyclable" as const,
-          stopSequence: 2,
-          expectedQuantityKg: "450.00",
-          grossWeightKg: "11020.00",
-          tareWeightKg: "10550.00",
-          actualWeightKg: "470.00",
-          scheduledAt: new Date(),
-          collectedAt: new Date(),
-          deliveredAt: new Date(),
-          status: "completed" as const,
-          missedReason: null,
-          gpsLatitude: "-1.258900",
-          gpsLongitude: "36.792300",
-          proofPhotoUrl: null,
-          ticketPhotoUrl: null,
-          binCondition: "Normal",
-          clientSignatureName: "Sister Agnes",
-          notes: "Cardboard OCC and PET",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          isDeleted: false,
-          deletedAt: null,
-        },
-        client: fallbackClients[2],
-      },
-      {
-        job: {
-          id: "j-03",
-          jobNumber: "JOB-2026-0893",
-          clientId: "clt-04",
-          routeId: "rt-01",
-          vehicleId: "v-01",
-          driverName: "Mohammed Bakari",
-          wasteStream: "organic" as const,
-          stopSequence: 3,
-          expectedQuantityKg: "300.00",
-          grossWeightKg: null,
-          tareWeightKg: null,
-          actualWeightKg: "320.00",
-          scheduledAt: new Date(),
-          collectedAt: new Date(),
-          deliveredAt: null,
-          status: "collected" as const,
-          missedReason: null,
-          gpsLatitude: "-1.284500",
-          gpsLongitude: "36.822800",
-          proofPhotoUrl: null,
-          ticketPhotoUrl: null,
-          binCondition: "Normal",
-          clientSignatureName: null,
-          notes: "In transit to MRF weighbridge",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          isDeleted: false,
-          deletedAt: null,
-        },
-        client: fallbackClients[3],
-      },
-    ],
-    activeRoutes: [
-      {
-        id: "rt-01",
-        routeCode: "RT-NAI-01",
-        name: "Westlands & Commercial Hotel Route",
-        vehicleId: "v-01",
-        driverName: "Mohammed Bakari",
-        driverPhone: "+254 712 345 678",
-        crewNames: "Peter Maina, Samuel Kipkorir",
-        routeDate: new Date().toISOString().split("T")[0],
-        status: "in_progress" as const,
-        totalStops: 12,
-        completedStops: 8,
-        totalDistanceKm: "42.50",
-        fuelUsedLitres: "18.40",
-        startDepot: "Industrial Area Depot",
-        endDestination: "Mombasa Road MRF & Weighbridge",
-        waypointsJson: null,
-        notes: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        isDeleted: false,
-        deletedAt: null,
-      },
-    ],
-    inventoryBatches: [],
+    totalClients: 0,
+    activeClients: 0,
+    clientsList: [] as { id: string; name: string }[],
+    completedJobsCount: 0,
+    completedTodayCount: 0,
+    missedJobsCount: 0,
+    totalJobsCount: 0,
+    totalWeightCollectedKg: 0,
+    organicWeightKg: 0,
+    recyclableWeightKg: 0,
+    recoveredTonnageKg: 0,
+    diversionRate: 0,
+    operatingVehiclesCount: 0,
+    totalVehiclesCount: 0,
+    paidInvoicesRevenue: 0,
+    scrapSalesRevenue: 0,
+    totalRevenue: 0,
+    totalExpenses: 0,
+    outstandingDebt: 0,
+    pendingInvoicesCount: 0,
+    overdueInvoicesCount: 0,
+    serviceAlerts: [] as Vehicle[],
+    recentJobs: [] as { job: CollectionJob; client: Client | null }[],
+    activeRoutes: [] as Route[],
+    inventoryBatches: [] as RecyclableInventory[],
   };
+}
+
+export interface HeaderTelemetry {
+  operatingVehiclesCount: number;
+  totalVehiclesCount: number;
+  diversionRate: number;
+  alerts: {
+    id: string;
+    title: string;
+    description: string;
+    tone: "amber" | "primary" | "cyan";
+  }[];
+}
+
+export async function getHeaderTelemetry(): Promise<HeaderTelemetry> {
+  try {
+    const [allJobs, allVehicles, recentCompletedJobs, activeRoutes] = await Promise.all([
+      db
+        .select({
+          wasteStream: collectionJobs.wasteStream,
+          actualWeightKg: collectionJobs.actualWeightKg,
+          expectedQuantityKg: collectionJobs.expectedQuantityKg,
+          status: collectionJobs.status,
+        })
+        .from(collectionJobs)
+        .where(eq(collectionJobs.isDeleted, false)),
+      db.select().from(vehicles).where(eq(vehicles.isDeleted, false)),
+      db
+        .select({
+          jobNumber: collectionJobs.jobNumber,
+          actualWeightKg: collectionJobs.actualWeightKg,
+          expectedQuantityKg: collectionJobs.expectedQuantityKg,
+          clientName: clients.name,
+        })
+        .from(collectionJobs)
+        .leftJoin(clients, eq(collectionJobs.clientId, clients.id))
+        .where(and(eq(collectionJobs.isDeleted, false), eq(collectionJobs.status, "completed")))
+        .orderBy(desc(collectionJobs.updatedAt))
+        .limit(2),
+      db
+        .select({
+          id: routes.id,
+          name: routes.name,
+          completedStops: routes.completedStops,
+          totalStops: routes.totalStops,
+          status: routes.status,
+        })
+        .from(routes)
+        .where(eq(routes.isDeleted, false))
+        .orderBy(desc(routes.routeDate))
+        .limit(1),
+    ]);
+
+    let totalKg = 0;
+    let divertedKg = 0;
+    allJobs.forEach((j) => {
+      const w = parseFloat(j.actualWeightKg || j.expectedQuantityKg || "0");
+      totalKg += w;
+      if (j.wasteStream === "organic" || j.wasteStream === "recyclable") {
+        divertedKg += w;
+      }
+    });
+
+    const diversionRate =
+      totalKg > 0 ? Math.min(Math.round((divertedKg / totalKg) * 1000) / 10, 100) : 0;
+
+    const operatingVehiclesCount = allVehicles.filter(
+      (v) => v.status === "active" || v.status === "in_transit"
+    ).length;
+
+    const alerts: HeaderTelemetry["alerts"] = [];
+
+    const serviceDue = allVehicles.find(
+      (v) => v.nextServiceKm - v.currentMileageKm <= 500 && v.nextServiceKm - v.currentMileageKm > 0
+    );
+    if (serviceDue) {
+      alerts.push({
+        id: `veh-${serviceDue.id}`,
+        title: `Vehicle ${serviceDue.plateNumber}`,
+        description: `Service inspection due in ${(serviceDue.nextServiceKm - serviceDue.currentMileageKm).toLocaleString()} km.`,
+        tone: "amber",
+      });
+    }
+
+    recentCompletedJobs.forEach((j, idx) => {
+      const weight = parseFloat(j.actualWeightKg || j.expectedQuantityKg || "0");
+      alerts.push({
+        id: `job-${idx}-${j.jobNumber}`,
+        title: `Collection ${j.jobNumber}`,
+        description: `${j.clientName || "Client"} — ${weight.toLocaleString()} kg verified.`,
+        tone: "primary",
+      });
+    });
+
+    if (activeRoutes[0]) {
+      const r = activeRoutes[0];
+      alerts.push({
+        id: `route-${r.id}`,
+        title: r.name,
+        description: `${r.completedStops} of ${r.totalStops} stops completed (${r.status.replace("_", " ")}).`,
+        tone: "cyan",
+      });
+    }
+
+    return {
+      operatingVehiclesCount,
+      totalVehiclesCount: allVehicles.length,
+      diversionRate,
+      alerts,
+    };
+  } catch (error) {
+    console.warn("[DB_QUERY_FALLBACK: getHeaderTelemetry]", error);
+    return {
+      operatingVehiclesCount: 0,
+      totalVehiclesCount: 0,
+      diversionRate: 0,
+      alerts: [],
+    };
+  }
 }
 
 export async function getClientsWithStats() {
@@ -887,7 +909,7 @@ export async function getFleetAndAssets() {
 
 export async function getFinanceLedger() {
   try {
-    const [allInvoices, allExpenses, allProjects] = await Promise.all([
+    const [allInvoices, allExpenses, allProjects, allInventory] = await Promise.all([
       db
         .select({ invoice: invoices, client: clients })
         .from(invoices)
@@ -905,66 +927,32 @@ export async function getFinanceLedger() {
         .from(projects)
         .where(eq(projects.isDeleted, false))
         .orderBy(desc(projects.createdAt)),
+      db
+        .select()
+        .from(recyclableInventory)
+        .where(eq(recyclableInventory.isDeleted, false))
+        .orderBy(desc(recyclableInventory.updatedAt)),
     ]);
 
-    if (allInvoices.length > 0 || allExpenses.length > 0) {
-      return {
-        invoices: allInvoices,
-        expenses: allExpenses,
-        projects: allProjects,
-      };
-    }
+    const scrapSales = allInventory.filter(
+      (b) => b.totalRevenue !== null && parseFloat(b.totalRevenue) > 0
+    );
+
+    return {
+      invoices: allInvoices,
+      expenses: allExpenses,
+      projects: allProjects,
+      scrapSales,
+    };
   } catch (error) {
     console.warn("[DB_QUERY_FALLBACK: getFinanceLedger]", error);
   }
 
   return {
-    invoices: [
-      {
-        invoice: {
-          id: "inv-01",
-          invoiceNumber: "INV-2026-0182",
-          clientId: "clt-01",
-          amount: "45000.00",
-          currency: "KES",
-          status: "paid" as const,
-          billingPeriod: "August 2026",
-          issueDate: "2026-08-01",
-          dueDate: "2026-08-15",
-          paidDate: "2026-08-12",
-          paymentMethod: "M-Pesa Business Till",
-          paymentReference: "QKD8912LX",
-          notes: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          isDeleted: false,
-          deletedAt: null,
-        },
-        client: fallbackClients[0],
-      },
-    ],
-    expenses: [],
-    projects: [
-      {
-        id: "prj-01",
-        projectCode: "PRJ-MSA-2026",
-        name: "Mombasa Marine Plastic Interceptor & Recycling Initiative",
-        donorPartner: "USAID Clean Oceans / Alliance to End Plastic Waste",
-        budgetAmount: "8500000.00",
-        spentAmount: "3420000.00",
-        targetTonnage: "180.00",
-        recoveredTonnage: "94.50",
-        startDate: "2026-01-15",
-        endDate: "2026-12-31",
-        status: "active" as const,
-        beneficiariesCount: "145 Informal Youth Waste Collectors",
-        notes: "4 waterfront collection hubs and Tuk-Tuk feeder logistics",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        isDeleted: false,
-        deletedAt: null,
-      },
-    ],
+    invoices: [] as { invoice: Invoice; client: Client | null }[],
+    expenses: [] as { expense: Expense; vehicle: Vehicle | null }[],
+    projects: [] as Project[],
+    scrapSales: [] as RecyclableInventory[],
   };
 }
 

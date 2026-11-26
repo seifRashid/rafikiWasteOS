@@ -66,6 +66,11 @@ export async function createInvoiceAction(rawInput: unknown) {
       .returning();
 
     revalidatePath("/finance");
+    revalidatePath("/finance/overview");
+    revalidatePath("/finance/invoices");
+    revalidatePath("/finance/payments");
+    revalidatePath("/finance/income");
+    revalidatePath("/finance/reports");
     revalidatePath(`/clients/${clientId}`);
     revalidatePath("/");
 
@@ -98,6 +103,11 @@ export async function markInvoicePaidAction(rawInput: unknown) {
       .where(eq(invoices.id, invoiceId));
 
     revalidatePath("/finance");
+    revalidatePath("/finance/overview");
+    revalidatePath("/finance/invoices");
+    revalidatePath("/finance/payments");
+    revalidatePath("/finance/income");
+    revalidatePath("/finance/reports");
     revalidatePath("/clients");
     revalidatePath("/");
 
@@ -135,6 +145,9 @@ export async function createExpenseAction(rawInput: unknown) {
       .returning();
 
     revalidatePath("/finance");
+    revalidatePath("/finance/overview");
+    revalidatePath("/finance/expenses");
+    revalidatePath("/finance/reports");
     revalidatePath("/");
 
     return { success: true, data: newExpense };

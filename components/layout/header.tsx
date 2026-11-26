@@ -24,6 +24,7 @@ import { useMobileNav } from "./mobile-nav-context";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 import { PwaInstallButton } from "@/components/pwa/pwa-install-button";
+import type { HeaderTelemetry } from "@/server/db/queries";
 
 interface HeaderProps {
   currentUser?: {
@@ -33,14 +34,19 @@ interface HeaderProps {
     email: string;
     avatarUrl?: string | null;
   };
+  telemetry?: HeaderTelemetry;
 }
 
-export function Header({ currentUser }: HeaderProps) {
+export function Header({ currentUser, telemetry }: HeaderProps) {
   const { toggleMobileNav } = useMobileNav();
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [currency, setCurrency] = useState<"KES" | "USD">("KES");
+
+  const operatingVehiclesCount = telemetry?.operatingVehiclesCount ?? 0;
+  const diversionRate = telemetry?.diversionRate ?? 0;
+  const alerts = telemetry?.alerts ?? [];
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E3E9E5] px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2 md:gap-4">
@@ -81,13 +87,15 @@ export function Header({ currentUser }: HeaderProps) {
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#EEFBFD] border border-[#B6EEF5] text-xs font-semibold text-[#056E7C]">
           <span className="w-2 h-2 rounded-full bg-[#08A6BA] animate-pulse" />
           <Truck className="w-3.5 h-3.5" />
-          <span>4 Trucks Operating</span>
+          <span>
+            {operatingVehiclesCount} {operatingVehiclesCount === 1 ? "Truck" : "Trucks"} Operating
+          </span>
         </div>
 
         {/* Live Diversion Rate Indicator */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#EDF9F1] border border-[#ADE4C1] text-xs font-semibold text-[#00682B]">
           <Recycle className="w-3.5 h-3.5" />
-          <span>68.4% Diversion Rate Today</span>
+          <span>{diversionRate}% Diversion Rate</span>
         </div>
 
         {/* Currency Switcher */}
@@ -114,50 +122,59 @@ export function Header({ currentUser }: HeaderProps) {
             aria-label="Notifications"
           >
             <Bell className="w-4 h-4" />
-            <span className="w-2 h-2 rounded-full bg-[#FECA36] absolute top-2 right-2 ring-2 ring-white" />
+            {alerts.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-[#FECA36] absolute top-2 right-2 ring-2 ring-white" />
+            )}
           </button>
 
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-80 bg-white rounded-card shadow-modal border border-[#E3E9E5] p-4 z-50 animate-in fade-in slide-in-from-top-2">
               <div className="flex items-center justify-between pb-3 border-b border-[#F0F4F2]">
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                  Operational Alerts (3)
+                  Operational Updates ({alerts.length})
                 </h4>
-                <span className="text-[10px] text-[#00993F] font-semibold cursor-pointer">
-                  Mark all read
-                </span>
               </div>
 
               <div className="mt-3 space-y-2.5">
-                <div className="flex items-start gap-2.5 p-2 rounded-nested bg-[#FFF8D6]/60 border border-[#FCE38A]">
-                  <AlertTriangle className="w-4 h-4 text-[#B8870A] shrink-0 mt-0.5" />
-                  <div className="text-xs">
-                    <p className="font-bold text-[#785608]">Truck KDD 482B</p>
-                    <p className="text-[#4B5563] text-[11px]">
-                      Service inspection due in 350 km.
-                    </p>
-                  </div>
-                </div>
+                {alerts.length === 0 ? (
+                  <p className="text-xs text-[#9CA3AF] py-2 text-center">
+                    No active operational alerts.
+                  </p>
+                ) : (
+                  alerts.map((alert) => {
+                    const styles =
+                      alert.tone === "amber"
+                        ? {
+                            box: "bg-[#FFF8D6]/60 border-[#FCE38A]",
+                            title: "text-[#785608]",
+                            icon: <AlertTriangle className="w-4 h-4 text-[#B8870A] shrink-0 mt-0.5" />,
+                          }
+                        : alert.tone === "cyan"
+                        ? {
+                            box: "bg-[#EEFBFD]/60 border-[#B6EEF5]",
+                            title: "text-[#056E7C]",
+                            icon: <Truck className="w-4 h-4 text-[#08A6BA] shrink-0 mt-0.5" />,
+                          }
+                        : {
+                            box: "bg-[#EDF9F1]/60 border-[#ADE4C1]",
+                            title: "text-[#00682B]",
+                            icon: <CheckCircle2 className="w-4 h-4 text-[#00993F] shrink-0 mt-0.5" />,
+                          };
 
-                <div className="flex items-start gap-2.5 p-2 rounded-nested bg-[#EDF9F1]/60 border border-[#ADE4C1]">
-                  <CheckCircle2 className="w-4 h-4 text-[#00993F] shrink-0 mt-0.5" />
-                  <div className="text-xs">
-                    <p className="font-bold text-[#00682B]">Weighbridge Ticket</p>
-                    <p className="text-[#4B5563] text-[11px]">
-                      JOB-2026-0891 (Safari Park Hotel) intake net 1,300 kg verified.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-2.5 p-2 rounded-nested bg-[#EEFBFD]/60 border border-[#B6EEF5]">
-                  <Truck className="w-4 h-4 text-[#08A6BA] shrink-0 mt-0.5" />
-                  <div className="text-xs">
-                    <p className="font-bold text-[#056E7C]">Route Completed</p>
-                    <p className="text-[#4B5563] text-[11px]">
-                      Westlands Loop finished 8 of 12 stops on schedule.
-                    </p>
-                  </div>
-                </div>
+                    return (
+                      <div
+                        key={alert.id}
+                        className={`flex items-start gap-2.5 p-2 rounded-nested border ${styles.box}`}
+                      >
+                        {styles.icon}
+                        <div className="text-xs">
+                          <p className={`font-bold ${styles.title}`}>{alert.title}</p>
+                          <p className="text-[#4B5563] text-[11px]">{alert.description}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}

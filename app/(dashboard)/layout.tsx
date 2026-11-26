@@ -1,6 +1,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/server";
+import { getHeaderTelemetry } from "@/server/db/queries";
 import { AppShell } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
@@ -30,5 +31,11 @@ export default async function DashboardLayout({
     redirect("/portal");
   }
 
-  return <AppShell currentUser={user}>{children}</AppShell>;
+  const telemetry = await getHeaderTelemetry();
+
+  return (
+    <AppShell currentUser={user} telemetry={telemetry}>
+      {children}
+    </AppShell>
+  );
 }
